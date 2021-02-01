@@ -50,6 +50,13 @@ kpath = '/Users/nidever/synspec/winter2017/odfnew/'
 # mkmod.pro  make model using interpolation
 # mkmadaf.pro   create a composition/continuum opacity file
 
+
+def strput(a,inp,pos):
+    """ Put a substring into a string."""
+    temp = list(a)
+    temp[pos:pos+len(inp)] = list(inp)
+    return ''.join(temp)
+
 def trapz(x,y):
     """
        Numerical integration using the composed trapezoidal rule
@@ -222,23 +229,24 @@ def mkmod(teff,logg,metal,outfile=None,ntau=None,mtype='odfnew'):
             print('% KMOD:  The requested values of ([Fe/H],logg,Teff) fall outside')
             print('% KMOD:  the boundaries of the grid.')
             print('% KMOD:  Temperatures higher that 10000 K can be reached, by modifying rd_kmod.')
-
-    import pdb; pdb.set_trace()
-
                 
     # Writing the outputfile
     if outfile is not None:
+        if os.path.exists(outfile): os.remove(outfile)
         with open(outfile,'w') as fil:
             for i in range(len(header)):
                 fil.write(header[i]+'\n')
-        if type == 'old':
-            for i in range(ntau):
-                fil.write(model[:,i],format='(E15.8,x,f8.1,5(x,E9.3))')
-        else:
-            for i in range(ntau):
-                fil.write(model[:,i],format='(E15.8,x,f8.1,8(x,E9.3))')
-        for i in range(len(tail)):
-            fil.write(tail[i]+'\n')
+            if type == 'old':
+                for i in range(ntau):
+                    fil.write('%15.8E %8.1f %9.3E %9.3E %9.3E %9.3E %9.3E\n' % tuple(model[:,i]))
+            else:
+                for i in range(ntau):
+                    fil.write('%15.8E %8.1f %9.3E %9.3E %9.3E %9.3E %9.3E %9.3E %9.3E %9.3E\n' % tuple(model[:,i]))
+            for i in range(len(tail)):
+                if i!= len(tail)-1:
+                    fil.write(tail[i]+'\n')
+                else:
+                    fil.write(tail[i])
 
     return model, header, tail
 
@@ -392,34 +400,27 @@ def model_interp(teff,logg,metal,mtype='odfnew'):
 
     for j in range(ncols):
         model[j,0] = model[j,1]*0.999
-
-    import pdb; pdb.set_trace()
         
 
     # Editing the header
-    tmpstr = header[0]
-    strput,tmpstr,string(teff,format='(f7.0)'),5
-    strput,tmpstr,string(logg,format='(f8.5)'),21
-    header[0] = tmpstr
+    header[0] = strput(header[0],'%7.0f' % teff,4)
+    header[0] = strput(header[0],'%8.5f' % logg,21)
+
     tmpstr1 = header[1]
     tmpstr2 = header[4]
     if (metal < 0.0):
         if type == 'old':
-            strput,tmpstr1,string(abs(metal),format='("-",f3.1)'),18
+            header[1] = strput(header[1],'-%3.1f' % abs(metal),18)
         else:
-            strput,tmpstr1,string(abs(metal),format='("-",f3.1)'),8
-        strput,tmpstr2,string(10^metal,format='(f9.5)'),16
+            header[1] = strput(header[1],'-%3.1f' % abs(metal),8)
+        header[4] = strput(header[4],'%9.5f' % 10**metal,16)
     else:
         if type == 'old':
-            strput,tmpstr1,string(abs(metal),format='("+",f3.1)'),18
+            header[1] = strput(header[1],'+%3.1f' % abs(metal),18)
         else:
-            strput,tmpstr1,string(abs(metal),format='("+",f3.1)'),8
-        strput,tmpstr2,string(10^metal,format='(f9.5)'),16
-    header[1] = tmpstr1
-    header[4] = tmpstr2
-    tmpstr = header[22]
-    strput,tmpstr,string(ntau,format='(i2)'),11
-    header[22] = tmpstr
+            header[1] = strput(header[1],'+%3.1f' % abs(metal),8)
+        header[4] = strput(header[4],'%9.5f' % 10**metal,16)            
+    header[22] = strput(header[22],'%2i' % ntau,11)
 
     return model, header, tail
 
