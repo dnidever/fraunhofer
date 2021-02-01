@@ -45,10 +45,17 @@ warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 cspeed = 2.99792458e5  # speed of light in km/s
 
 
-kpath = '/Users/nidever/synspec/winter2017/odfnew/'
+#kpath = '/Users/nidever/synspec/winter2017/odfnew/'
 
 # mkmod.pro  make model using interpolation
 # mkmadaf.pro   create a composition/continuum opacity file
+
+def modeldir():
+    """ Return the model atmospheres directory."""
+    fil = os.path.abspath(__file__)
+    codedir = os.path.dirname(fil)
+    datadir = codedir+'/../models/'
+    return datadir
 
 
 def strput(a,inp,pos):
@@ -103,7 +110,7 @@ def read_kurucz(teff,logg,metal,mtype='odfnew'):
     else:
         s4 = 'k2odfnew.dat'
 
-    filename = kpath+s1+s2+s3+s4
+    filename = modeldir()+s1+s2+s3+s4
 
     teffstring = '%7.0f' % teff   # string(teff,format='(f7.0)')
     loggstring = '%8.5f' % logg   # string(logg,format='(f8.5)')
@@ -199,7 +206,7 @@ def mkmod(teff,logg,metal,outfile=None,ntau=None,mtype='odfnew'):
         ntau = 72
 
     if mtype == 'odfnew' and teff > 10000:
-        avail = Table.read(kpath+'tefflogg.txt',format='ascii')
+        avail = Table.read(modeldir()+'tefflogg.txt',format='ascii')
         avail['col1'].name = 'teff'
         avail['col2'].name = 'logg'
         v1,nv1 = dln.where(abs(avail['teff']-teff) < 0.1 and abs(avail['logg']-logg) <= 0.001)
