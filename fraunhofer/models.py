@@ -54,7 +54,7 @@ def modeldir():
     """ Return the model atmospheres directory."""
     fil = os.path.abspath(__file__)
     codedir = os.path.dirname(fil)
-    datadir = codedir+'/../models/'
+    datadir = codedir+'/data/'
     return datadir
 
 
@@ -150,7 +150,7 @@ def read_kurucz(teff,logg,metal,mtype='odfnew'):
 
 
 
-def mkmod(teff,logg,metal,outfile=None,ntau=None,mtype='odfnew'):
+def mkmodel(teff,logg,metal,outfile=None,ntau=None,mtype='odfnew'):
     """
 	Extracts and if necessary interpolates (linearly) a kurucz model 
 	from his grid.
