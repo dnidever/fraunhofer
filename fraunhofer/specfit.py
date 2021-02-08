@@ -10,6 +10,7 @@ __authors__ = 'David Nidever <dnidever@montana.edu>'
 __version__ = '20200711'  # yyyymmdd
 
 import os
+import shutil
 #import sys, traceback
 import contextlib, io, sys
 import numpy as np
@@ -71,7 +72,7 @@ def getabund(inputs):
     codedir = os.path.dirname(os.path.abspath(__file__))
     pertab = Table.read(codedir+'/data/periodic_table.txt',format='ascii')
 
-    feh = inputs.get('feh')
+    feh = inputs.get('FEH')
     if feh is None:
         feh = inputs.get('FE_H')
     if feh is None:
@@ -113,10 +114,12 @@ def getabund(inputs):
     abu = solar_abund.copy()
     abu[2:] += feh
     # Now offset the elements with [X/Fe], [X/Fe]=[X/H]-[Fe/H]
-    g, = np.where(np.char.array(list(inputs.keys())).find('_H') != -1)
+    g, = np.where( (np.char.array(list(inputs.keys())).find('_H') != -1) &
+                   (np.char.array(list(inputs.keys())) != 'FE_H') )
     if len(g)>0:
-        ind1,ind2 = dln.match(np.char.array(labels.dtype.names)[g],np.char.array(pertab['symbol']).upper()+'_H')
-        abu[ind2] += (np.array(labels[0])[g[ind1]]).astype(float) - feh
+        ind1,ind2 = dln.match(np.char.array(list(inputs.keys()))[g],np.char.array(pertab['symbol']).upper()+'_H')
+        key1 = np.char.array(list(inputs.keys()))[g[ind1]][0]
+        abu[ind2] += float(inputs[key1]) - feh
     # convert to linear
     abu[2:] = 10**abu[2:]
     # Divide by N(H)
@@ -134,30 +137,40 @@ def synple_wrapper(inputs):
     # inputs is a dictionary with all of the inputs
     # Teff, logg, [Fe/H], some [X/Fe], and the wavelength parameters (w0, w1, dw).
 
+    # Make temporary directory for synple to work in
+    curdir = os.path.abspath(os.curdir) 
+    tdir = os.path.abspath(tempfile.mkdtemp(prefix="syn",dir="."))
+    os.chdir(tdir)
+    
+    # Make key names all CAPS
+    inputs = dict((key.upper(), value) for (key, value) in inputs.items())
+    
     # Make the model atmosphere file
-    teff = inputs['teff']
-    logg = inputs['logg']
-    metal = inputs['feh']
+    teff = inputs['TEFF']
+    logg = inputs['LOGG']
+    metal = inputs['FE_H']
 
     tid,modelfile = tempfile.mkstemp(prefix="mod",dir=".")
     model, header, tail = models.mkmodel(teff,logg,metal,modelfile)
     inputs['modelfile'] = modelfile
     
     # Create the synspec synthetic spectrum
-    w0 = inputs['w0']
-    w1 = inputs['w1']
-    dw = inputs['dw']
-    vmicro = inputs.get('vmicro')
+    w0 = inputs['W0']
+    w1 = inputs['W1']
+    dw = inputs['DW']
+    vmicro = inputs.get('VMICRO')
     if vmicro is None:
         vmicro = 2.0
     # Get the abundances
     abu = getabund(inputs)
         
     wave,flux,cont = synple.syn(modelfile,(w0,w1),dw,vmicro=vmicro,abu=list(abu))
+
+    # Delete temporary files
+    shutil.rmtree(tdir)
+    os.chdir(curdir)
     
-    import pdb; pdb.set_trace()
-    
-    return spec
+    return (wave,flux,cont)
 
 def model_spectrum(inputs):
     """
