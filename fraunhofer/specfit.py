@@ -77,16 +77,46 @@ class SpecFitter:
         self._w0 = np.min(spec.wave)
         self._w1 = np.max(spec.wave)
 
-    def model(self, xx, *args):
-        print(args)
-        # The arguments correspond to the fitting parameters
+    @property
+    def allparams(self):
+        return self._allparams
+
+    @allparams.setter
+    def allparams(self,allparams):
+        """ Dictionary, keys must be all CAPS."""
+        self._allparams = dict((key.upper(), value) for (key, value) in allparams.items())  # all CAPS
+
+    @property
+    def fitparams(self):
+        return self._fitparams
+
+    @fitparams.setter
+    def fitparams(self,fitparams):
+        """ list, keys must be all CAPS."""
+        self._fitparams = [v.upper() for v in fitparams]      # all CAPS
+        
+    def mkinputs(self,args):
+        """ Make INPUTS dictionary."""
         # Create INPUTS with all arguments needed to make the spectrum
         inputs = self.allparams.copy()  # initialize with initial/fixed values
         for k in range(len(self.fitparams)):        # this overwrites the values for the fitted values
             inputs[self.fitparams[k]] = args[k]
-        inputs['dw'] = self._dw          # add in wavelength parameters
-        inputs['w0'] = self._w0
-        inputs['w1'] = self._w1
+        inputs['DW'] = self._dw          # add in wavelength parameters
+        inputs['W0'] = self._w0
+        inputs['W1'] = self._w1
+        return inputs
+        
+    def model(self, xx, *args):
+        print(args)
+        # The arguments correspond to the fitting parameters
+        inputs = self.mkinputs(args)
+        ## Create INPUTS with all arguments needed to make the spectrum
+        #inputs = self.allparams.copy()  # initialize with initial/fixed values
+        #for k in range(len(self.fitparams)):        # this overwrites the values for the fitted values
+        #    inputs[self.fitparams[k]] = args[k]
+        #inputs['dw'] = self._dw          # add in wavelength parameters
+        #inputs['w0'] = self._w0
+        #inputs['w1'] = self._w1
         print(inputs)
         # Create the synthetic spectrum
         synspec = model_spectrum(inputs)
@@ -96,8 +126,107 @@ class SpecFitter:
         
         return pspec.flux.flatten()
 
+    def jac(self,x,*args,verbose=False):
+        """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
+        is the partial derivative of f[i] with respect to x[j]). """
 
-def getabund(inputs):
+        # A new synthetic spectrum does not need to be generated RV, vmicro or vsini.
+        # Some time can be saved by not remaking those.
+        # Use a one-sided derivative.
+
+        relstep = 0.02
+        npix = len(x)
+        npar = len(args)
+
+        # Get INPUTS dictionary and make keys all CAPS
+        inputs = self.mkinputs(args)
+        inputs = dict((key.upper(), value) for (key, value) in inputs.items())
+
+        # Extend on the ends for RV/convolution purposes
+        w0 = inputs['W0']
+        w1 = inputs['W1']
+        dw = inputs['DW']
+        rv = inputs.get('RV')
+        vrot = inputs.get('VROT')
+        vmicro = inputs.get('VMICRO')        
+        inputsext = inputs.copy()
+        if rv is not None or vrot is not None:
+            numext = int(np.ceil(w1*(1.0+1500/cspeed)-w1))
+            inputsext['W0'] = w0-numext*dw
+            inputsext['W1'] = w1+numext*dw
+
+        # Create synthetic spectrum at current values
+        #  set vrot=vmicro=0, will convolve later if necessary
+        inputsext['VMICRO'] = 0
+        inputsext['VROT'] = 0
+        wave1,flux1,cont1 = synple_wrapper(inputsext,verbose=verbose)
+        # Get final wavelength array
+        wv1, ind1 = dln.closest(wave1,w0)
+        wv2, ind2 = dln.closest(wave1,w1)
+        origspec = Spec1D(flux1/cont1,wave=wave1,lsfpars=np.array(0.0))
+        origspec.cont = cont1
+        # Smooth and shift
+        if rv is not None or vrot is not None or vmicro is not None:
+            smorigspec = smoothshift_spectrum(origspec,vrot=vrot,vmicro=vmicro,rv=rv)
+        else:
+            smorigspec = origspec.copy()
+        # Trim to final wavelengths
+        if rv is not None or vrot is not None:
+            temp = smorigspec.copy()
+            smorigspec = Spec1D(temp.flux[ind1:ind2+1],wave=temp.wave[ind1:ind2+1],lsfpars=np.array(0.0))
+            if hasattr(temp,'cont'):
+                smorigspec.cot = temp.cont[ind1:ind2+1]
+            del temp
+        # Convolve with the LSF
+        pspec = prepare_synthspec(smorigspec,self.lsf)
+        # Flatten the spectrum
+        origflux = pspec.flux.flatten()
+
+
+        # IS IT FASTER TO SMOOTH ALL OF THE SPECTRA THE SAME TIME??
+        
+        
+        # Initialize jacobian matrix
+        jac = np.zeros((npix,npar),np.float64)
+        # Model at current values
+        f0 = multispec_interp(x,*args)
+
+
+        
+        # Compute full models for teff/logg/feh
+        for i in range(3):
+            pars = np.array(copy.deepcopy(argv))
+            step = relstep*pars[i]
+            pars[i] += step
+            f1 = multispec_interp(x,*pars)
+            # Hit an edge, try the negative value instead
+            nbd = np.sum(f1>1000)
+            if nbd>1000:
+                pars = np.array(copy.deepcopy(argv))
+                step = -relstep*pars[i]
+                pars[i] += step
+                f1 = multispec_interp(x,*pars)
+            jac[:,i] = (f1-f0)/step
+        # Compute model for single spectra
+        nspec = len(speclist)
+        cnt = 0
+        for i in range(nspec):
+            vrel1 = vrel[i]
+            step = 1.0
+            vrel1 += step
+            npx = speclist[i].npix*speclist[i].norder
+            m = modlist[i]([teff,logg,feh],rv=vrel1)
+            if m is not None:
+                jac[cnt:cnt+npx,i] = (m.flux.T.flatten()-f0[cnt:cnt+npx])/step
+            else:
+                jac[cnt:cnt+npx,i] = 1e30
+            cnt += npx
+                
+        return jac
+
+
+
+def getabund(inputs,verbose=False):
     """ Grab the abundances out of the input file and return array of abundances."""
     
     # Create the input 99-element abundance array
@@ -153,7 +282,8 @@ def getabund(inputs):
         for k in range(len(ind1)):
             key1 = np.char.array(list(inputs.keys()))[g[ind1[k]]]
             abu[ind2[k]] += float(inputs[key1]) - feh
-            print('%s %f' % (key1,float(inputs[key1])))
+            if verbose:
+                print('%s %f' % (key1,float(inputs[key1])))
     # convert to linear
     abu[2:] = 10**abu[2:]
     # Divide by N(H)
@@ -166,13 +296,11 @@ def getabund(inputs):
     return abu
 
 
-def synple_wrapper(inputs):
+def synple_wrapper(inputs,verbose=False,tmpbase='/tmp'):
     """ This is a wrapper around synple to generate a new synthetic spectrum."""
     # inputs is a dictionary with all of the inputs
     # Teff, logg, [Fe/H], some [X/Fe], and the wavelength parameters (w0, w1, dw).
 
-    tmpbase = '/tmp'
-    
     # Make temporary directory for synple to work in
     curdir = os.path.abspath(os.curdir) 
     tdir = os.path.abspath(tempfile.mkdtemp(prefix="syn",dir=tmpbase))
@@ -199,7 +327,7 @@ def synple_wrapper(inputs):
     if vrot is None:
         vrot = 0.0
     # Get the abundances
-    abu = getabund(inputs)
+    abu = getabund(inputs,verbose=verbose)
     
     wave,flux,cont = synple.syn(modelfile,(w0,w1),dw,vmicro=vmicro,vrot=vrot,abu=list(abu))
 
@@ -210,7 +338,61 @@ def synple_wrapper(inputs):
     return (wave,flux,cont)
 
 
-def model_spectrum(inputs,keepextend=False):
+def smoothshift_spectrum(inpspec,vmicro=None,vrot=None,rv=None):
+    """ This smoothes the spectrum by Vrot+Vmicro and
+        shifts it by RV."""
+
+    #vmicro = inputs.get('VMICRO')
+    #vrot = inputs.get('VROT')
+    #rv = inputs.get('RV')
+
+    # Nothing to do
+    if vmicro is None and vrot is None and rv is None:
+        return inpspec.copy()
+    
+    # Initialize output spectrum
+    spec = inpspec.copy()
+
+    # Some broadening
+    if vmicro is not None or vrot is not None:
+        flux = doppler.utils.broaden(spec.wave,spec.flux,vgauss=vmicro,vsini=vrot)
+        spec.flux = flux
+            
+    ## Vrot/Vsini (km/s) and Vmicro (in km/s)
+    #if vrot is not None or vmicro is not None:
+    #    wave, flux = synple.call_rotin(wave, flux, vrot, fwhm, space, steprot, stepfwhm, clean=False, reuseinputfiles=True)
+        
+    # Doppler shift only (in km/s)
+    if rv is not None:
+        if rv != 0.0:
+            shiftwave = spec.wave*(1+rv/cspeed)
+            gd,ngd,bd,nbd = dln.where( (spec.wave >= np.min(shiftwave)) & (spec.wave <= np.max(shiftwave)), comp=True)
+            # Doppler shift and interpolate onto wavelength array
+            if hasattr(spec,'cont'):
+                cont = synple.interp_spl(spec.wave[gd], shiftwave, spec.cont)
+                spec.cont *= 0
+                spec.cont[gd] = cont
+                # interpolate the continuing to the missing pixels
+                if nbd>0:
+                    contmissing = dln.interp(spec.wave[gd],spec.cont[gd],spec.wave[bd],kind='linear',assume_sorted=False)
+                    spec.cont[bd] = contmissing
+            flux = synple.interp_spl(spec.wave[gd], shiftwave, spec.flux)
+            spec.flux *= 0
+            spec.flux[gd] = flux
+            if nbd>0:
+                # Fill in missing values with interpolated values
+                coef = dln.poly_fit(spec.wave[gd],spec.flux[gd],2)
+                fluxmissing = dln.poly(spec.wave[bd],coef)
+                spec.flux[bd] = fluxmissing
+                # Mask these pixels
+                if spec.mask is None:
+                    spec.mask = np.zeros(len(spec.flux),bool)
+                spec.mask[bd] = True
+    
+    return spec
+
+
+def model_spectrum(inputs,verbose=False,keepextend=False):
     """
     This creates a model spectrum given the inputs:
     RV, Teff, logg, vmicro, vsini, [Fe/H], [X/Fe], w0, w1, dw.
@@ -232,10 +414,11 @@ def model_spectrum(inputs,keepextend=False):
         numext = int(np.ceil(w1*(1.0+1500/cspeed)-w1))
         inputsext['W0'] = w0-numext*dw
         inputsext['W1'] = w1+numext*dw
-        print('Extending wavelength by '+str(numext)+' pixels on each end')
+        if verbose:
+            print('Extending wavelength by '+str(numext)+' pixels on each end')
         
     # Create the synthetic spectrum
-    wave1,flux1,cont1 = synple_wrapper(inputsext)
+    wave1,flux1,cont1 = synple_wrapper(inputsext,verbose=verbose)
 
     # Vmicro, handled by synple already
     # Vsini, handled by synple as VROT
@@ -321,19 +504,6 @@ def prepare_synthspec(spec,lsf):
         pspec.cont[:,o] = cont        
 
     return pspec
-
-
-def synthspec_jac(x,*args):
-     """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
-         is the partial derivative of f[i] with respect to x[j]). """
-
-     # A new synthetic spectrum does not need to be generated RV, vmicro or vsini.
-     # Some time can be saved by not remaking those.
-     # Use a one-sided derivative.
-
-
-     
-     pass
 
 
 def mkbounds(params):
