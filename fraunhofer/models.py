@@ -18,18 +18,13 @@ from astropy.io import fits
 from astropy.table import Table
 import astropy.units as u
 from astropy.time import Time
-from astropy.coordinates import SkyCoord, EarthLocation
-from astropy.wcs import WCS
 from scipy.ndimage.filters import median_filter,gaussian_filter1d
 from scipy.optimize import curve_fit, least_squares
 from scipy.interpolate import interp1d, interpn
-import thecannon as tc
 from dlnpyutils import utils as dln, bindata
 from doppler.spec1d import Spec1D
 from doppler import (cannon,utils,reader)
 import copy
-import emcee
-import corner
 import logging
 import time
 import matplotlib
@@ -236,7 +231,9 @@ def mkmodel(teff,logg,metal,outfile=None,ntau=None,mtype='odfnew'):
             print('% KMOD:  The requested values of ([Fe/H],logg,Teff) fall outside')
             print('% KMOD:  the boundaries of the grid.')
             print('% KMOD:  Temperatures higher that 10000 K can be reached, by modifying rd_kmod.')
-                
+            import pdb; pdb.set_trace()
+            return None, None, None
+            
     # Writing the outputfile
     if outfile is not None:
         if os.path.exists(outfile): os.remove(outfile)

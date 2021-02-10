@@ -126,10 +126,12 @@ class SpecFitter:
     def model(self, xx, *args):
         """ Return a model spectrum flux with the given input arguments."""
         # This corrects for air/vacuum wavelength differences
-        print(args)
+        if self.verbose:
+            print(args)
         # The arguments correspond to the fitting parameters
         inputs = self.mkinputs(args)
-        print(inputs)
+        if self.verbose:
+            print(inputs)
         # Create the synthetic spectrum
         synspec = model_spectrum(inputs,verbose=self.verbose)   # always returns air wavelengths
         # Convolve with the LSF and do air/vacuum wave conversion
@@ -142,6 +144,8 @@ class SpecFitter:
         """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
         is the partial derivative of f[i] with respect to x[j]). """
 
+        print(args)
+        
         if self.verbose:
             print(' ')
             print('##### Calculating Jacobian Matrix #####')
@@ -283,7 +287,7 @@ def getabund(inputs,verbose=False):
     modelfile = inputs.get('modelfile')
     if modelfile is None:
         raise ValueError('modelfile missing from inputs')
-    atmostype, teff, logg, vmicro2, mabu, nd, atmos = synple.read_model(modelfile)
+    atmostype, teff, logg, vmicro2, mabu, nd, atmos = synple.read_model(modelfile,verbose=verbose)
     mlines = dln.readlines(modelfile)
 
     # solar abundances
@@ -379,7 +383,8 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp'):
     # Get the abundances
     abu = getabund(inputs,verbose=verbose)
     
-    wave,flux,cont = synple.syn(modelfile,(w0,w1),dw,vmicro=vmicro,vrot=vrot,abu=list(abu))
+    wave,flux,cont = synple.syn(modelfile,(w0,w1),dw,vmicro=vmicro,vrot=vrot,
+                                abu=list(abu),verbose=verbose)
 
     # Delete temporary files
     shutil.rmtree(tdir)
@@ -641,8 +646,8 @@ def fit(spec,allparams,fitparams=None,verbose=False):
     spfitter = SpecFitter(spec,allparams,fitparams=fitparams,verbose=verbose)
     pinit = [allparams[k] for k in fitparams]
     bounds = mkbounds(fitparams)
-    
-    import pdb; pdb.set_trace()
+
+    print('Fitting: '+', '.join(fitparams))
 
     # Fit the spectrum using curve_fit
     pars, cov = curve_fit(spfitter.model,spfitter.wave,spfitter.flux,
@@ -665,3 +670,7 @@ def fit(spec,allparams,fitparams=None,verbose=False):
     out['chisq'] = chisq
 
     import pdb; pdb.set_trace()
+    # Reshape final model spectrum
+    model = model.reshape(spec.flux.shape)
+
+    return out, model
