@@ -25,7 +25,7 @@ from scipy.ndimage.filters import median_filter,gaussian_filter1d
 from scipy.optimize import curve_fit, least_squares
 from scipy.interpolate import interp1d
 import thecannon as tc
-from dlnpyutils import utils as dln, bindata
+from dlnpyutils import utils as dln, bindata, astro
 import doppler
 from doppler.spec1d import Spec1D
 from doppler import (cannon,utils,reader)
@@ -51,10 +51,27 @@ warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 cspeed = 2.99792458e5  # speed of light in km/s
 
 class SpecFitter:
-    def __init__ (self,spec,allparams):
+    def __init__ (self,spec,allparams,fitparams=None,verbose=False):
+        # Parameters
         self.allparams = allparams
-        self.fitparams = list(allparams.keys())  # by default fit all parameters
+        if fitparams is not None:
+            self.fitparams = fitparams
+        else:
+            self.fitparams = list(allparams.keys())  # by default fit all parameters            
+        # Save spectrum information    
+        self.spec = spec.copy()
+        self.flux = spec.flux.flatten()
+        self.err = spec.err.flatten()
+        self.wave = spec.wave.flatten()
         self.lsf = spec.lsf.copy()
+        self.lsf.wavevac = spec.wavevac  # need this later for synspec prep
+        self.wavevac = spec.wavevac
+        self.verbose = verbose
+        # Convert vacuum to air wavelengths
+        #  synspec uses air wavelengths
+        wave = spec.wave.copy()
+        if spec.wavevac is True:
+            wave = astro.vactoair(wave.flatten()).reshape(spec.wave.shape)
         # Figure out the wavelength parameters
         npix,norder = spec.flux.shape
         xp = np.arange(npix//20)*20
@@ -62,9 +79,9 @@ class SpecFitter:
         dw = np.zeros(spec.lsf.norder,np.float64)
         mindw = np.zeros(norder,np.float64)
         for o in range(spec.norder):
-            dw[o] = np.median(dln.slope(spec.wave[:,o]))
-            wr[o,0] = np.min(spec.wave[:,o])
-            wr[o,1] = np.max(spec.wave[:,o])            
+            dw[o] = np.median(dln.slope(wave[:,o]))
+            wr[o,0] = np.min(wave[:,o])
+            wr[o,1] = np.max(wave[:,o])            
             fwhm = spec.lsf.fwhm(spec.wave[xp,o],xtype='Wave',order=o)
             # FWHM is in units of lsf.xtype, convert to wavelength/angstroms, if necessary
             if spec.lsf.xtype.lower().find('pix')>-1:
@@ -73,9 +90,9 @@ class SpecFitter:
             # need at least ~4 pixels per LSF FWHM across the spectrum
             #  using 3 affects the final profile shape
             mindw[o] = np.min(fwhm/4)
-        self._dw = np.min(mindw)
-        self._w0 = np.min(spec.wave)
-        self._w1 = np.max(spec.wave)
+        self._dwair = np.min(mindw)    # IN AIR WAVELENGTHS!!
+        self._w0air = np.min(wave)
+        self._w1air = np.max(wave)
 
     @property
     def allparams(self):
@@ -101,39 +118,42 @@ class SpecFitter:
         inputs = self.allparams.copy()  # initialize with initial/fixed values
         for k in range(len(self.fitparams)):        # this overwrites the values for the fitted values
             inputs[self.fitparams[k]] = args[k]
-        inputs['DW'] = self._dw          # add in wavelength parameters
-        inputs['W0'] = self._w0
-        inputs['W1'] = self._w1
+        inputs['DW'] = self._dwair          # add in wavelength parameters
+        inputs['W0'] = self._w0air
+        inputs['W1'] = self._w1air
         return inputs
         
     def model(self, xx, *args):
+        """ Return a model spectrum flux with the given input arguments."""
+        # This corrects for air/vacuum wavelength differences
         print(args)
         # The arguments correspond to the fitting parameters
         inputs = self.mkinputs(args)
-        ## Create INPUTS with all arguments needed to make the spectrum
-        #inputs = self.allparams.copy()  # initialize with initial/fixed values
-        #for k in range(len(self.fitparams)):        # this overwrites the values for the fitted values
-        #    inputs[self.fitparams[k]] = args[k]
-        #inputs['dw'] = self._dw          # add in wavelength parameters
-        #inputs['w0'] = self._w0
-        #inputs['w1'] = self._w1
         print(inputs)
         # Create the synthetic spectrum
-        synspec = model_spectrum(inputs)
-        # Convolve with the LSF
+        synspec = model_spectrum(inputs,verbose=self.verbose)   # always returns air wavelengths
+        # Convolve with the LSF and do air/vacuum wave conversion
         pspec = prepare_synthspec(synspec,self.lsf)
         # Return flattened spectrum
         
         return pspec.flux.flatten()
 
-    def jac(self,x,*args,verbose=False):
+    def jac(self,x,*args):
         """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
         is the partial derivative of f[i] with respect to x[j]). """
 
+        if self.verbose:
+            print(' ')
+            print('##### Calculating Jacobian Matrix #####')
+            print(' ')
+        
         # A new synthetic spectrum does not need to be generated RV, vmicro or vsini.
         # Some time can be saved by not remaking those.
         # Use a one-sided derivative.
 
+        # Boundaries
+        lbounds,ubounds = mkbounds(self.fitparams)
+        
         relstep = 0.02
         npix = len(x)
         npar = len(args)
@@ -142,88 +162,108 @@ class SpecFitter:
         inputs = self.mkinputs(args)
         inputs = dict((key.upper(), value) for (key, value) in inputs.items())
 
-        # Extend on the ends for RV/convolution purposes
+        # Some important parameters
         w0 = inputs['W0']
         w1 = inputs['W1']
         dw = inputs['DW']
         rv = inputs.get('RV')
         vrot = inputs.get('VROT')
-        vmicro = inputs.get('VMICRO')        
-        inputsext = inputs.copy()
-        if rv is not None or vrot is not None:
-            numext = int(np.ceil(w1*(1.0+1500/cspeed)-w1))
-            inputsext['W0'] = w0-numext*dw
-            inputsext['W1'] = w1+numext*dw
-
+        vmicro = inputs.get('VMICRO') 
+        
         # Create synthetic spectrum at current values
-        #  set vrot=vmicro=0, will convolve later if necessary
-        inputsext['VMICRO'] = 0
-        inputsext['VROT'] = 0
-        wave1,flux1,cont1 = synple_wrapper(inputsext,verbose=verbose)
-        # Get final wavelength array
-        wv1, ind1 = dln.closest(wave1,w0)
-        wv2, ind2 = dln.closest(wave1,w1)
-        origspec = Spec1D(flux1/cont1,wave=wave1,lsfpars=np.array(0.0))
-        origspec.cont = cont1
+        #  set vrot=vmicro=rv=0, will modify later if necessary
+        if self.verbose:
+            print('--- Current values ---')
+            print(args)
+        tinputs = inputs.copy()
+        tinputs['VMICRO'] = 0
+        tinputs['VROT'] = 0
+        tinputs['RV'] = 0
+        origspec = model_spectrum(tinputs,keepextend=True)  # always are wavelengths
         # Smooth and shift
-        if rv is not None or vrot is not None or vmicro is not None:
-            smorigspec = smoothshift_spectrum(origspec,vrot=vrot,vmicro=vmicro,rv=rv)
-        else:
-            smorigspec = origspec.copy()
+        smorigspec = smoothshift_spectrum(origspec,vrot=vrot,vmicro=vmicro,rv=rv)
         # Trim to final wavelengths
-        if rv is not None or vrot is not None:
-            temp = smorigspec.copy()
-            smorigspec = Spec1D(temp.flux[ind1:ind2+1],wave=temp.wave[ind1:ind2+1],lsfpars=np.array(0.0))
-            if hasattr(temp,'cont'):
-                smorigspec.cot = temp.cont[ind1:ind2+1]
-            del temp
-        # Convolve with the LSF
+        smorigspec = trim_spectrum(smorigspec,w0,w1)
+        # Convolve with the LSF and do air/vacuum wave conversion
         pspec = prepare_synthspec(smorigspec,self.lsf)
         # Flatten the spectrum
-        origflux = pspec.flux.flatten()
+        f0 = pspec.flux.flatten()
 
-
-        # IS IT FASTER TO SMOOTH ALL OF THE SPECTRA THE SAME TIME??
+        chisq = np.sqrt( np.sum( (self.flux-f0)**2/self.err**2 )/len(self.flux) )
+        if self.verbose:
+            print('chisq = '+str(chisq))
         
+        # MASK PIXELS!?
         
         # Initialize jacobian matrix
         jac = np.zeros((npix,npar),np.float64)
-        # Model at current values
-        f0 = multispec_interp(x,*args)
-
-
         
-        # Compute full models for teff/logg/feh
-        for i in range(3):
-            pars = np.array(copy.deepcopy(argv))
+        # Loop over parameters
+        for i in range(npar):
+            pars = np.array(copy.deepcopy(args))
             step = relstep*pars[i]
+            # Check boundaries, if above upper boundary
+            #   go the opposite way
+            if pars[i]>ubounds[i]:
+                step *= -1
             pars[i] += step
-            f1 = multispec_interp(x,*pars)
-            # Hit an edge, try the negative value instead
-            nbd = np.sum(f1>1000)
-            if nbd>1000:
-                pars = np.array(copy.deepcopy(argv))
-                step = -relstep*pars[i]
-                pars[i] += step
-                f1 = multispec_interp(x,*pars)
-            jac[:,i] = (f1-f0)/step
-        # Compute model for single spectra
-        nspec = len(speclist)
-        cnt = 0
-        for i in range(nspec):
-            vrel1 = vrel[i]
-            step = 1.0
-            vrel1 += step
-            npx = speclist[i].npix*speclist[i].norder
-            m = modlist[i]([teff,logg,feh],rv=vrel1)
-            if m is not None:
-                jac[cnt:cnt+npx,i] = (m.flux.T.flatten()-f0[cnt:cnt+npx])/step
+            tinputs = self.mkinputs(pars)
+
+            if self.verbose:
+                print(' ')
+                print('--- '+str(i+1)+' '+self.fitparams[i]+' '+str(pars[i])+' ---')
+                print(pars)
+            # VROT/VMICRO/RV, just shift/smooth original spectrum
+            if self.fitparams[i]=='VROT' or self.fitparams[i]=='VMICRO' or self.fitparams[i]=='RV':
+                tvrot = tinputs.get('VROT')
+                tvmicro = tinputs.get('VMICRO')
+                trv = tinputs.get('RV')
+                #import pdb; pdb.set_trace()                
+                # Smooth and shift
+                synspec = smoothshift_spectrum(origspec,vrot=tvrot,vmicro=tvmicro,rv=trv)
+                # Trim to final wavelengths
+                synspec = trim_spectrum(synspec,w0,w1)
             else:
-                jac[cnt:cnt+npx,i] = 1e30
-            cnt += npx
+                synspec = model_spectrum(tinputs)  # always returns air wavelengths
+
+            # Convert to vacuum wavelengths if necessary
+            if self.wavevac:
+                synspec.wave = astro.airtovac(synspec.wave)
+                synspec.wavevac = True
+            # Convolve with the LSF and do air/vacuum wave conversion
+            pspec = prepare_synthspec(synspec,self.lsf)
+            # Flatten the spectrum
+            f1 = pspec.flux.flatten()
+            
+            if np.sum(~np.isfinite(f1))>0:
+                print('some nans/infs')
+                import pdb; pdb.set_trace()
+
+            jac[:,i] = (f1-f0)/step
                 
         return jac
 
+    
+def trim_spectrum(spec,w0,w1):
+    """ Trim a synthetic spectrum to [w0,w1]."""
+    # This assumes that the spectrum has a single order
+    wv1, ind1 = dln.closest(spec.wave,w0)
+    wv2, ind2 = dln.closest(spec.wave,w1)
+    # Nothing to do
+    if ind1==0 and ind2==(spec.npix-1):
+        return spec
+    outspec = spec.copy()
+    outspec.flux = outspec.flux[ind1:ind2+1]
+    outspec.wave = outspec.wave[ind1:ind2+1]
+    if outspec.err is not None:
+        outspec.err = outspec.err[ind1:ind2+1]
+    if outspec.mask is not None:
+        outspec.mask = outspec.mask[ind1:ind2+1]
+    if hasattr(outspec,'cont'):
+        if outspec.cont is not None:
+            outspec.cont = outspec.cont[ind1:ind2+1]        
+    outspec.npix = len(outspec.flux)
+    return outspec
 
 
 def getabund(inputs,verbose=False):
@@ -298,6 +338,8 @@ def getabund(inputs,verbose=False):
 
 def synple_wrapper(inputs,verbose=False,tmpbase='/tmp'):
     """ This is a wrapper around synple to generate a new synthetic spectrum."""
+    # Wavelengths are all AIR!!
+    
     # inputs is a dictionary with all of the inputs
     # Teff, logg, [Fe/H], some [X/Fe], and the wavelength parameters (w0, w1, dw).
 
@@ -315,8 +357,16 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp'):
     metal = inputs['FE_H']
 
     tid,modelfile = tempfile.mkstemp(prefix="mod",dir=".")
-    model, header, tail = models.mkmodel(teff,logg,metal,modelfile)
+    # Limit values
+    #  of course the logg/feh ranges vary with Teff
+    mteff = dln.limit(teff,3500.0,60000.0)
+    mlogg = dln.limit(logg,0.0,5.0)
+    mmetal = dln.limit(metal,-2.5,0.5)
+    model, header, tail = models.mkmodel(mteff,mlogg,mmetal,modelfile)
     inputs['modelfile'] = modelfile
+    if os.path.exists(modelfile) is False or os.stat(modelfile).st_size==0:
+        print('model atmosphere file does NOT exist')
+        import pdb; pdb.set_trace()
     
     # Create the synspec synthetic spectrum
     w0 = inputs['W0']
@@ -381,9 +431,10 @@ def smoothshift_spectrum(inpspec,vmicro=None,vrot=None,rv=None):
             spec.flux[gd] = flux
             if nbd>0:
                 # Fill in missing values with interpolated values
-                coef = dln.poly_fit(spec.wave[gd],spec.flux[gd],2)
-                fluxmissing = dln.poly(spec.wave[bd],coef)
-                spec.flux[bd] = fluxmissing
+                if np.sum(np.isfinite(spec.flux[gd]))>0:
+                    coef = dln.poly_fit(spec.wave[gd],spec.flux[gd],2)
+                    fluxmissing = dln.poly(spec.wave[bd],coef)
+                    spec.flux[bd] = fluxmissing
                 # Mask these pixels
                 if spec.mask is None:
                     spec.mask = np.zeros(len(spec.flux),bool)
@@ -398,6 +449,8 @@ def model_spectrum(inputs,verbose=False,keepextend=False):
     RV, Teff, logg, vmicro, vsini, [Fe/H], [X/Fe], w0, w1, dw.
     This creates the new synthetic spectrum and then convolves with vmicro, vsini and
     shifts to velocity RV.
+    
+    The returned spectrum always uses AIR wavelengths!!!
 
     """
     
@@ -409,8 +462,10 @@ def model_spectrum(inputs,verbose=False,keepextend=False):
     w1 = inputs['W1']
     dw = inputs['DW']
     rv = inputs.get('RV')
+    vrot = inputs.get('VROT')
+    vmicro = inputs.get('VMICRO')
     inputsext = inputs.copy()
-    if rv is not None:
+    if rv is not None or vrot is not None or vmicro is not None:
         numext = int(np.ceil(w1*(1.0+1500/cspeed)-w1))
         inputsext['W0'] = w0-numext*dw
         inputsext['W1'] = w1+numext*dw
@@ -418,44 +473,42 @@ def model_spectrum(inputs,verbose=False,keepextend=False):
             print('Extending wavelength by '+str(numext)+' pixels on each end')
         
     # Create the synthetic spectrum
+    #  set vrot=vmicro=0, will convolve later if necessary
+    inputsext['VMICRO'] = 0
+    inputsext['VROT'] = 0
     wave1,flux1,cont1 = synple_wrapper(inputsext,verbose=verbose)
 
-    # Vmicro, handled by synple already
-    # Vsini, handled by synple as VROT
-    # Doppler shift
-    if rv is not None:
-        # Get final wavelength array
-        wv1, ind1 = dln.closest(wave1,w0)
-        wv2, ind2 = dln.closest(wave1,w1)
-        wave = wave1[ind1:ind2+1]
-        # Doppler shift and interpolate onto final wavelength array
-        cont = synple.interp_spl(wave, wave1*(1+rv/cspeed), cont1)
-        flux = synple.interp_spl(wave, wave1*(1+rv/cspeed), flux1)        
-    
-    # gaussian convolution, synple.lgconv()
-    # rotation broadening, synple.rotconv()
+    # Get final wavelength array
+    wv1, ind1 = dln.closest(wave1,w0)
+    wv2, ind2 = dln.closest(wave1,w1)
+    synspec = Spec1D(flux1/cont1,wave=wave1,lsfpars=np.array(0.0))
+    synspec.cont = cont1
+    synspec.wavevac = False
+    # Smooth and shift
+    if rv is not None or vrot is not None or vmicro is not None:
+        synspec = smoothshift_spectrum(synspec,vrot=vrot,vmicro=vmicro,rv=rv)
+    # Trim to final wavelengths
+    if keepextend is False:
+        synspec = trim_spectrum(synspec,w0,w1)
 
-    # Return as Spec1D object, 1 order
-    synspec = Spec1D(flux/cont,wave=wave,lsfpars=np.array(0.0))
-    synspec.cont = cont
-    
     return synspec
 
 
-def prepare_synthspec(spec,lsf):
+def prepare_synthspec(synspec,lsf):
     """ Prepare a synthetic spectrum to be compared to an observed spectrum."""
-    # convolve with LSF
-
-    ## Get full wavelength range and total wavelength coverage in the orders
-    #owr = dln.minmax(lsf.wave)
-    #owavefull = dln.valrange(lsf.wave)
-    #owavechunks = 0.0
-    #odw = np.zeros(lsf.norder,np.float64)
-    #specwave = np.atleast_2d(lsf.wave.copy())
-    #for o in range(spec.norder):
-    #    owavechunks += dln.valrange(specwave[:,o])
-    #    odw[o] = np.median(dln.slope(specwave[:,o]))
-
+    # Convolve with LSF and do air<->vacuum wavelength conversion
+    
+    # Convert wavelength from air->vacuum or vice versa
+    if synspec.wavevac != lsf.wavevac:
+        # Air -> Vacuum
+        if synspec.wavevac is False:
+            synspec.wave = astro.airtovac(synspec.wave)
+            synspec.wavevac = True
+        # Vacuum -> Air
+        else:
+            synspec.dispersion = astro.vactoair(synspec.wave)
+            synspec.wavevac = False
+        
     # Initialize the output spectrum
     npix,norder = lsf.wave.shape
     pspec = Spec1D(np.zeros((npix,norder),np.float32),wave=lsf.wave,lsfpars=lsf.pars,lsftype=lsf.lsftype,lsfxtype=lsf.xtype)
@@ -465,11 +518,11 @@ def prepare_synthspec(spec,lsf):
     for o in range(lsf.norder):
         wobs = lsf.wave[:,o]
         dw = np.median(dln.slope(wobs))
-        wv1,ind1 = dln.closest(spec.wave,np.min(wobs)-2*np.abs(dw))
-        wv2,ind2 = dln.closest(spec.wave,np.max(wobs)+2*np.abs(dw))
-        modelflux = spec.flux[ind1:ind2+1]
-        modelwave = spec.wave[ind1:ind2+1]
-        modelcont = spec.cont[ind1:ind2+1]
+        wv1,ind1 = dln.closest(synspec.wave,np.min(wobs)-2*np.abs(dw))
+        wv2,ind2 = dln.closest(synspec.wave,np.max(wobs)+2*np.abs(dw))
+        modelflux = synspec.flux[ind1:ind2+1]
+        modelwave = synspec.wave[ind1:ind2+1]
+        modelcont = synspec.cont[ind1:ind2+1]
 
         # Rebin, if necessary
         #  get LSF FWHM (A) for a handful of positions across the spectrum
@@ -489,7 +542,7 @@ def prepare_synthspec(spec,lsf):
         #  using 3 affects the final profile shape
         nbin = np.round(np.min(fwhmpix)//4).astype(int)
         if nbin>1:
-            npix2 = np.round(len(spec.flux) // nbin).astype(int)
+            npix2 = np.round(len(synspec.flux) // nbin).astype(int)
             modelflux = dln.rebin(modelflux[0:npix2*nbin],npix2)
             modelwave = dln.rebin(modelwave[0:npix2*nbin],npix2)
             modelcont = dln.rebin(modelcont[0:npix2*nbin],npix2)            
@@ -552,7 +605,7 @@ def mkbounds(params):
     return bounds
 
 
-def fit(spec,allparams,fitparams):
+def fit(spec,allparams,fitparams=None,verbose=False):
     """ Fit a spectrum and determine the abundances."""
 
     #allparams = {'teff':3500.0,'logg':2.5,'fe_h':-1.2,'rv':0.0,'ca_h':-0.5}
@@ -564,7 +617,7 @@ def fit(spec,allparams,fitparams):
     fitparams = [v.upper() for v in fitparams]
 
     # Normalize the spectrum
-    if spec.normalize==False:
+    if spec.normalized==False:
         spec.normalize()
     
     # Use doppler to get initial guess of stellar parameters and RV
@@ -574,44 +627,41 @@ def fit(spec,allparams,fitparams):
     print('logg = %f' % dopout['logg'][0])
     print('[Fe/H] = %f' % dopout['feh'][0])
     print('Vrel = %f' % dopout['vrel'][0])
+
+    # Fitting parameters
+    if fitparams is None:
+        fitparams = list(allparams.keys())
+        fitparams = [v.upper() for v in fitparams]  # all CAPS
     
     # Initialize the fitter
     allparams['TEFF'] = dopout['teff'][0]
     allparams['LOGG'] = dopout['logg'][0]
     allparams['FE_H'] = dopout['feh'][0]
     allparams['RV'] = dopout['vrel'][0]
-    spfitter = SpecFitter(spec,allparams)
-    spfitter.fitparams = fitparams
+    spfitter = SpecFitter(spec,allparams,fitparams=fitparams,verbose=verbose)
     pinit = [allparams[k] for k in fitparams]
     bounds = mkbounds(fitparams)
     
     import pdb; pdb.set_trace()
 
-    pars, cov = curve_fit(spfitter.model,spec.wave.flatten(),spec.flux.flatten(),
-                          sigma=spec.err.flatten(),p0=pinit,bounds=bounds)
-
-    import pdb; pdb.set_trace()
-    
-    
-    # Use curve_fit
-    diff_step = np.zeros(npar,float)
-    diff_step[:] = 0.02
-    lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds, jac=synthspec_jac)
-    # If it hits a boundary then the solution won't chance much compared to initpar
-    # setting absolute_sigma=True gives crazy low lsperror values
-    lsperror = np.sqrt(np.diag(lscov))
+    # Fit the spectrum using curve_fit
+    pars, cov = curve_fit(spfitter.model,spfitter.wave,spfitter.flux,
+                          sigma=spfitter.err,p0=pinit,bounds=bounds,jac=spfitter.jac)
+    error = np.sqrt(np.diag(cov))
 
     if verbose is True:
-        print('Least Squares RV and stellar parameters:')
-        printpars(lspars)
-    lsmodel = multispec_interp(wave,*lspars)
-    lschisq = np.sqrt(np.sum(((flux-lsmodel)/err)**2)/len(lsmodel))
-    if verbose is True: print('chisq = %5.2f' % lschisq)
+        print('Least Squares values:')
+        printpars(pars)
+    model = spfitter.model(spfitter.wave,*pars)
+    chisq = np.sqrt(np.sum(((spfitter.flux-model)/spfitter.err)**2)/len(model))
+    print('chisq = %5.2f' % chisq)
 
     # Put it into the output structure
     dtype = np.dtype([('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),('chisq',float)])
     out = np.zeros(1,dtype=dtype)
-    out['pars'] = lspars
-    out['parerr'] = lsperror
-    out['parcov'] = lscov
-    out['chisq'] = lschisq
+    out['pars'] = pars
+    out['parerr'] = error
+    out['parcov'] = cov
+    out['chisq'] = chisq
+
+    import pdb; pdb.set_trace()
