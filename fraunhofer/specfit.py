@@ -315,15 +315,16 @@ def getabund(inputs,verbose=False):
                            -20.00, -20.00, -20.00, -20.00, -20.00,
                            -20.00, -20.00])
 
-    # DEAL WITH ALPHA ABUNDANCES !!!!
+    # Deal with alpha abundances
+    #  only add the individual alpha abundance if it's not already there
+    #  sometimes we might fit a single alpha element but want to use
+    #  ALPHA_H to set the rest of them
     if inputs.get('ALPHA_H') is not None:
         alpha = inputs['ALPHA_H']
-        inputs['O_H'] = alpha
-        inputs['MG_H'] = alpha
-        inputs['SI_H'] = alpha
-        inputs['S_H'] = alpha
-        inputs['CA_H'] = alpha
-        inputs['TI_H'] = alpha        
+        elem = ['O','MG','SI','S','CA','TI']
+        for k in range(len(elem)):
+            if inputs.get(elem[k]+'_H') is None:
+                inputs[elem[k]+'_H'] = alpha
     
     # Scale global metallicity
     abu = solar_abund.copy()
@@ -620,30 +621,70 @@ def mkbounds(params):
     return bounds
 
 
+def initpars(allparams,fitparams):
+    """ Make initial set of parameters given ALLPARAMS and
+        FITPARAMS."""
+
+    allparams = dict((key.upper(), value) for (key, value) in allparams.items()) # all CAPS
+    fitparams = [v.upper() for v in fitparams]  # all CAPS
+    
+    npars = len(fitparams)
+    pinit = np.zeros(npars,np.float64)
+    # Loop over parameters
+    for k in range(npars):
+        ind, = np.where(np.char.array(list(allparams.keys()))==fitparams[k])
+        # This parameter is in ALLPARAMS
+        if len(ind)>0:
+            pinit[k] = allparams[fitparams[k]]
+        # Not in ALLPARAMS
+        else:
+            if fitparams[k]=='RV':
+                pinit[k] = 0.0
+            elif fitparams[k]=='VMICRO':
+                pinit[k] = 2.0
+            elif fitparams[k]=='VROT':
+                pinit[k] = 0.0
+            elif fitparams[k]=='TEFF':
+                pinit[k] = 5000.0
+            elif fitparams[k]=='LOGG':
+                pinit[k] = 3.0
+            elif fitparams[k].endswith('_H'):
+                # Abundances, use FE_H if possible
+                if 'FE_H' in allparams.keys():
+                    pinit[k] = allparams['FE_H']
+                else:
+                    pinit[k] = 0.0
+            else:
+                pinit[k] = 0.0
+
+    return pinit
+
+
 def fit_lsq(spec,allparams,fitparams=None,verbose=False):
     """ Fit parameters using least-squares."""
-
-    # Capitalize the inputs
-    # Make key names all CAPS
-    allparams = dict((key.upper(), value) for (key, value) in allparams.items())
-    fitparams = [v.upper() for v in fitparams]
 
     # Normalize the spectrum
     if spec.normalized==False:
         spec.normalize()
+    
+    # Capitalize the inputs
+    # Make key names all CAPS
+    allparams = dict((key.upper(), value) for (key, value) in allparams.items())
 
     # Fitting parameters
     if fitparams is None:
         fitparams = list(allparams.keys())
-        fitparams = [v.upper() for v in fitparams]  # all CAPS
+    fitparams = [v.upper() for v in fitparams]  # all CAPS
+    npar = len(fitparams)
     
     # Initialize the fitter
     spfitter = SpecFitter(spec,allparams,fitparams=fitparams,verbose=verbose)
-    pinit = [allparams[k] for k in fitparams]
+    pinit = initpars(allparams,fitparams)
     bounds = mkbounds(fitparams)
-    
-    print('Fitting: '+', '.join(fitparams))
 
+    if verbose:
+        print('Fitting: '+', '.join(fitparams))
+        
     # Fit the spectrum using curve_fit
     pars, cov = curve_fit(spfitter.model,spfitter.wave,spfitter.flux,
                           sigma=spfitter.err,p0=pinit,bounds=bounds,jac=spfitter.jac)
@@ -651,10 +692,12 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=False):
 
     if verbose is True:
         print('Least Squares values:')
-        printpars(pars)
+        for k in range(npar):
+            print(fitparams[k]+': '+str(pars[k]))
     model = spfitter.model(spfitter.wave,*pars)
     chisq = np.sqrt(np.sum(((spfitter.flux-model)/spfitter.err)**2)/len(model))
-    print('chisq = %5.2f' % chisq)
+    if verbose:
+        print('chisq = %5.2f' % chisq)
 
     # Put it into the output structure
     dtype = np.dtype([('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),('chisq',float)])
@@ -671,75 +714,116 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=False):
 
 
 
-def fit(spec,allparams,fitparams=None,verbose=False):
+def fit(spec,allparams=None,fitparams=None,verbose=False):
     """ Fit a spectrum and determine the abundances."""
-
-    #allparams = {'teff':3500.0,'logg':2.5,'fe_h':-1.2,'rv':0.0,'ca_h':-0.5}
-    #fitparams = ['teff','logg','fe_h','rv']
-
-    # Capitalize the inputs
-    # Make key names all CAPS
-    allparams = dict((key.upper(), value) for (key, value) in allparams.items())
-    fitparams = [v.upper() for v in fitparams]
 
     # Normalize the spectrum
     if spec.normalized==False:
         spec.normalize()
 
     # 1) Doppler (Teff, logg, feh, RV)
-    # 2) specfit (Teff, logg, feh, alpha, RV)
-    # 3) fit each element separately
-    # 4) fit everything simultaneously
-        
-    # Use doppler to get initial guess of stellar parameters and RV
-    print('Running Doppler')
+    #---------------------------------
+    print('Step 1: Running Doppler')        
+    # Use Doppler to get initial guess of stellar parameters and RV
     dopout, dopfmodel, dopspecm = doppler.fit(spec)
     print('Teff = %f' % dopout['teff'][0])
     print('logg = %f' % dopout['logg'][0])
     print('[Fe/H] = %f' % dopout['feh'][0])
     print('Vrel = %f' % dopout['vrel'][0])
-
-    # Fitting parameters
-    if fitparams is None:
-        fitparams = list(allparams.keys())
-        fitparams = [v.upper() for v in fitparams]  # all CAPS
+    print('chisq = %f' % dopout['chisq'][0])
     
-    # Initialize the fitter
+    # Initialize allparams
+    if allparams is None:
+        allparams = {}
     allparams['TEFF'] = dopout['teff'][0]
     allparams['LOGG'] = dopout['logg'][0]
     allparams['FE_H'] = dopout['feh'][0]
     allparams['RV'] = dopout['vrel'][0]
-    spfitter = SpecFitter(spec,allparams,fitparams=fitparams,verbose=verbose)
-    pinit = [allparams[k] for k in fitparams]
-    bounds = mkbounds(fitparams)
+    allparams = dict((key.upper(), value) for (key, value) in allparams.items())  # all CAPS
 
 
-    # ADD IN THE CAPABILITY TO FIT ALPHA_H
+    # Initialize fitparams
+    if fitparams is None:
+        fitparams = list(allparams.keys())
+    fitparams = [v.upper() for v in fitparams]   # all CAPS
+
+
+    #import pdb; pdb.set_trace()
     
-    print('Fitting: '+', '.join(fitparams))
+    # 2) specfit (Teff, logg, feh, alpha, RV)
+    #----------------------------------------
+    print(' ')    
+    print('Step 2: Fitting Teff, logg, [FE/H], [alpha/H], and RV')
+    allparams1 = allparams.copy()
+    fitparams1 = ['TEFF','LOGG','FE_H','ALPHA_H','RV']
+    #out1, model1 = fit_lsq(spec,allparams1,fitparams1,verbose=verbose)
 
-    # Fit the spectrum using curve_fit
-    pars, cov = curve_fit(spfitter.model,spfitter.wave,spfitter.flux,
-                          sigma=spfitter.err,p0=pinit,bounds=bounds,jac=spfitter.jac)
-    error = np.sqrt(np.diag(cov))
+    
+    dtype = np.dtype([('pars',float,5),('parerr',float,5),('parcov',float,(5,5)),('chisq',float)])
+    out1 = np.zeros(1,dtype=dtype)
+    out1['pars'][0] = [ 5.10465480e+03,  3.57491204e+00, -1.65229131e-01, -3.06759473e-01,  6.81550572e+00]
+    out1['parerr'][0] = [9.97215673e+00, 1.62189664e-02, 5.99211701e-03, 7.79013094e-03, 2.96506687e-02]
+    out1['chisq'][0] = 8.28033419
+    
+    
+    print('Teff = %f' % out1['pars'][0][0])
+    print('logg = %f' % out1['pars'][0][1])
+    print('[Fe/H] = %f' % out1['pars'][0][2])
+    print('[alpha/H] = %f' % out1['pars'][0][3])    
+    print('RV = %f' % out1['pars'][0][4])
+    print('chisq = %f' % out1['chisq'][0])
+    
 
-    if verbose is True:
-        print('Least Squares values:')
-        printpars(pars)
-    model = spfitter.model(spfitter.wave,*pars)
-    chisq = np.sqrt(np.sum(((spfitter.flux-model)/spfitter.err)**2)/len(model))
-    print('chisq = %5.2f' % chisq)
+    #import pdb; pdb.set_trace()
+    
+    
+    # 3) Fit each element separately
+    #-------------------------------
+    print(' ')
+    print('Step 3: Fitting each element separately')
+    allparams2 = allparams1.copy()
+    for k in range(len(fitparams1)):
+        allparams2[fitparams1[k]] = out1['pars'][0][k]
+    elem = ['C','N','O','NA','MG','AL','SI','K','CA','TI','V','CR','MN','CO','NI','CU','CE','ND']
+    nelem = len(elem)
+    elemcat = np.zeros(nelem,dtype=np.dtype([('name',np.str,10),('par',np.float64),('parerr',np.float64)]))
+    elemcat['name'] = elem
+    for k in range(nelem):
+        allparselem = allparams2.copy()
+        if elem[k] in ['O','MG','SI','S','CA','TI']:
+            allparselem[elem[k]+'_H'] = allparams2['ALPHA_H']
+        else:
+            allparselem[elem[k]+'_H'] = allparams2['FE_H']
+        fitparselem = [elem[k]+'_H']
 
-    # Put it into the output structure
-    dtype = np.dtype([('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),('chisq',float)])
-    out = np.zeros(1,dtype=dtype)
-    out['pars'] = pars
-    out['parerr'] = error
-    out['parcov'] = cov
-    out['chisq'] = chisq
+        print('Fitting '+fitparselem[0])
+        out2, model2 = fit_lsq(spec,allparselem,fitparselem,verbose=verbose)
+        elemcat['par'][k] = out2['pars'][0][0]
+        elemcat['parerr'][k] = out2['parerr'][0][0]        
+        print('%s = %f' % (elemcat['name'][k],elemcat['par'][k]))
+        print('chisq = %f' % out2['chisq'][0])
 
     import pdb; pdb.set_trace()
-    # Reshape final model spectrum
-    model = model.reshape(spec.flux.shape)
+
+              
+    # 4) fit everything simultaneously
+    print('Step 4: Fit everything simultaneously')
+
+              
+    allparams1 = allparams2.copy()
+    fitparams1 = ['TEFF','LOGG','FE_H','ALPHA_H','RV']
+    out3, model3 = fit_lsq(spec,allparams3,fitparams3,verbose=verbose)
+    print('Teff = %f' % out1['pars'][0])
+    print('logg = %f' % out1['pars'][1])
+    print('[Fe/H] = %f' % out1['pars'][2])
+    print('[alpha/H] = %f' % out1['pars'][3])    
+    print('RV = %f' % out1['pars'][4])
+    print('chisq = %f' % out1['chisq'][0])
+    
+
+    import pdb; pdb.set_trace()
+
+              
+    
 
     return out, model
