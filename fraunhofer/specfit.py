@@ -315,6 +315,16 @@ def getabund(inputs,verbose=False):
                            -20.00, -20.00, -20.00, -20.00, -20.00,
                            -20.00, -20.00])
 
+    # DEAL WITH ALPHA ABUNDANCES !!!!
+    if inputs.get('ALPHA_H') is not None:
+        alpha = inputs['ALPHA_H']
+        inputs['O_H'] = alpha
+        inputs['MG_H'] = alpha
+        inputs['SI_H'] = alpha
+        inputs['S_H'] = alpha
+        inputs['CA_H'] = alpha
+        inputs['TI_H'] = alpha        
+    
     # Scale global metallicity
     abu = solar_abund.copy()
     abu[2:] += feh
@@ -610,6 +620,57 @@ def mkbounds(params):
     return bounds
 
 
+def fit_lsq(spec,allparams,fitparams=None,verbose=False):
+    """ Fit parameters using least-squares."""
+
+    # Capitalize the inputs
+    # Make key names all CAPS
+    allparams = dict((key.upper(), value) for (key, value) in allparams.items())
+    fitparams = [v.upper() for v in fitparams]
+
+    # Normalize the spectrum
+    if spec.normalized==False:
+        spec.normalize()
+
+    # Fitting parameters
+    if fitparams is None:
+        fitparams = list(allparams.keys())
+        fitparams = [v.upper() for v in fitparams]  # all CAPS
+    
+    # Initialize the fitter
+    spfitter = SpecFitter(spec,allparams,fitparams=fitparams,verbose=verbose)
+    pinit = [allparams[k] for k in fitparams]
+    bounds = mkbounds(fitparams)
+    
+    print('Fitting: '+', '.join(fitparams))
+
+    # Fit the spectrum using curve_fit
+    pars, cov = curve_fit(spfitter.model,spfitter.wave,spfitter.flux,
+                          sigma=spfitter.err,p0=pinit,bounds=bounds,jac=spfitter.jac)
+    error = np.sqrt(np.diag(cov))
+
+    if verbose is True:
+        print('Least Squares values:')
+        printpars(pars)
+    model = spfitter.model(spfitter.wave,*pars)
+    chisq = np.sqrt(np.sum(((spfitter.flux-model)/spfitter.err)**2)/len(model))
+    print('chisq = %5.2f' % chisq)
+
+    # Put it into the output structure
+    dtype = np.dtype([('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),('chisq',float)])
+    out = np.zeros(1,dtype=dtype)
+    out['pars'] = pars
+    out['parerr'] = error
+    out['parcov'] = cov
+    out['chisq'] = chisq
+
+    # Reshape final model spectrum
+    model = model.reshape(spec.flux.shape)
+
+    return out, model
+
+
+
 def fit(spec,allparams,fitparams=None,verbose=False):
     """ Fit a spectrum and determine the abundances."""
 
@@ -624,7 +685,12 @@ def fit(spec,allparams,fitparams=None,verbose=False):
     # Normalize the spectrum
     if spec.normalized==False:
         spec.normalize()
-    
+
+    # 1) Doppler (Teff, logg, feh, RV)
+    # 2) specfit (Teff, logg, feh, alpha, RV)
+    # 3) fit each element separately
+    # 4) fit everything simultaneously
+        
     # Use doppler to get initial guess of stellar parameters and RV
     print('Running Doppler')
     dopout, dopfmodel, dopspecm = doppler.fit(spec)
@@ -647,6 +713,9 @@ def fit(spec,allparams,fitparams=None,verbose=False):
     pinit = [allparams[k] for k in fitparams]
     bounds = mkbounds(fitparams)
 
+
+    # ADD IN THE CAPABILITY TO FIT ALPHA_H
+    
     print('Fitting: '+', '.join(fitparams))
 
     # Fit the spectrum using curve_fit
