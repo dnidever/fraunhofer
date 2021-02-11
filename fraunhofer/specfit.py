@@ -683,6 +683,78 @@ def initpars(allparams,fitparams):
     return pinit
 
 
+
+def specfigure(figfile,spec,fmodel,out,original=None,verbose=True,figsize=10):
+    """ Make diagnostic figure."""
+    #import matplotlib
+    matplotlib.use('Agg')
+    #import matplotlib.pyplot as plt
+    if os.path.exists(figfile): os.remove(figfile)
+    norder = spec.norder
+    nlegcol = 2
+    if original is not None: nlegcol=3
+    # Single-order plot
+    if norder==1:
+        fig,ax = plt.subplots()
+        fig.set_figheight(figsize*0.5)
+        fig.set_figwidth(figsize)
+        if original is not None:
+            plt.plot(original.wave,original.flux,color='green',label='Original',linewidth=1)
+        plt.plot(spec.wave,spec.flux,'b',label='Masked Data',linewidth=1)
+        plt.plot(fmodel.wave,fmodel.flux,'r',label='Model',linewidth=1,alpha=0.8)
+        leg = ax.legend(loc='upper left', frameon=True, framealpha=0.8, ncol=nlegcol)
+        plt.xlabel('Wavelength (Angstroms)')
+        plt.ylabel('Normalized Flux')
+        xr = dln.minmax(spec.wave)
+        yr = [np.min([spec.flux,fmodel.flux]), np.max([spec.flux,fmodel.flux])]
+        if original is not None:
+            yr = [np.min([original.flux,spec.flux,fmodel.flux]), np.max([spec.flux,fmodel.flux])]            
+        yr = [yr[0]-dln.valrange(yr)*0.15,yr[1]+dln.valrange(yr)*0.005]
+        yr = [np.max([yr[0],-0.2]), np.min([yr[1],2.0])]
+        plt.xlim(xr)
+        plt.ylim(yr)
+        snr = np.nanmedian(spec.flux/spec.err)
+        plt.title(spec.filename)
+        #ax.annotate(r'S/N=%5.1f   Teff=%5.1f$\pm$%5.1f  logg=%5.2f$\pm$%5.2f  [Fe/H]=%5.2f$\pm$%5.2f   Vrel=%5.2f$\pm$%5.2f   chisq=%5.2f' %
+        #            (snr, out['TEFF'], out['tefferr'], out['LOGG'], out['loggerr'], out['FE_H'], out['feherr'], out['RV'], out['vrelerr'], out['chisq']),
+        #            xy=(np.mean(xr), yr[0]+dln.valrange(yr)*0.05),ha='center')
+    # Multi-order plot
+    else:
+        fig,ax = plt.subplots(norder)
+        fig.set_figheight(figsize)
+        fig.set_figwidth(figsize)
+        for i in range(norder):
+            if original is not None:
+                ax[i].plot(original.wave[:,i],original.flux[:,i],color='green',label='Original',linewidth=1)            
+            ax[i].plot(spec.wave[:,i],spec.flux[:,i],'b',label='Masked Data',linewidth=1)
+            ax[i].plot(fmodel.wave[:,i],fmodel.flux[:,i],'r',label='Model',linewidth=1,alpha=0.8)
+            if i==0:
+                leg = ax[i].legend(loc='upper left', frameon=True, framealpha=0.8, ncol=nlegcol)
+            ax[i].set_xlabel('Wavelength (Angstroms)')
+            ax[i].set_ylabel('Normalized Flux')
+            xr = dln.minmax(spec.wave[:,i])
+            yr = [np.min([spec.flux[:,i],fmodel.flux[:,i]]), np.max([spec.flux[:,i],fmodel.flux[:,i]])]
+            if original is not None:
+                yr = [np.min([original.flux[:,i],spec.flux[:,i],fmodel.flux[:,i]]), np.max([spec.flux[:,i],fmodel.flux[:,i]])]
+            yr = [yr[0]-dln.valrange(yr)*0.05,yr[1]+dln.valrange(yr)*0.05]
+            if i==0:
+                yr = [yr[0]-dln.valrange(yr)*0.15,yr[1]+dln.valrange(yr)*0.05]            
+            yr = [np.max([yr[0],-0.2]), np.min([yr[1],2.0])]
+            ax[i].set_xlim(xr)
+            ax[i].set_ylim(yr)
+            # legend
+            if i==0:
+                snr = np.nanmedian(spec.flux/spec.err)
+                ax[i].set_title(spec.filename)
+                #ax[i].annotate(r'S/N=%5.1f   Teff=%5.1f$\pm$%5.1f  logg=%5.2f$\pm$%5.2f  [Fe/H]=%5.2f$\pm$%5.2f   Vrel=%5.2f$\pm$%5.2f   chisq=%5.2f' %
+                #               (snr,out['teff'],out['tefferr'],out['logg'],out['loggerr'],out['feh'],out['feherr'],out['vrel'],out['vrelerr'],out['chisq']),
+                #               xy=(np.mean(xr), yr[0]+dln.valrange(yr)*0.05),ha='center')
+    plt.savefig(figfile,bbox_inches='tight')
+    plt.close(fig)
+    if verbose is True: print('Figure saved to '+figfile)
+
+
+
 def fit_lsq(spec,allparams,fitparams=None,verbose=False):
     """ Fit parameters using least-squares."""
 
@@ -737,9 +809,11 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=False):
 
 
 
-def fit(spec,allparams=None,fitparams=None,elem=None,verbose=False):
+def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False):
     """ Fit a spectrum and determine the abundances."""
 
+    t0 = time.time()
+    
     # Normalize the spectrum
     if spec.normalized==False:
         spec.normalize()
@@ -856,7 +930,14 @@ def fit(spec,allparams=None,fitparams=None,elem=None,verbose=False):
     import pdb; pdb.set_trace()
 
 
-    # Make final structure and save a figure
-    
+    # Make final structure and save the figure
+    out = out3
+    model = Spec1D(model3,wave=spec.wave.copy(),lsfpars=np.array(0.0))
+    model.lsf = spec.lsf.copy()
+    if figfile is not None:
+        specfigure(figfile,spec,model,out,verbose=verbose)
 
+    if verbose:
+        print('dt = %f sec.' % time.time()-t0)
+        
     return out, model
