@@ -820,6 +820,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
 
     # 1) Doppler (Teff, logg, feh, RV)
     #---------------------------------
+    t1 = time.time()
     print('Step 1: Running Doppler')        
     # Use Doppler to get initial guess of stellar parameters and RV
     dopout, dopfmodel, dopspecm = doppler.fit(spec)
@@ -828,6 +829,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     print('[Fe/H] = %f' % dopout['feh'][0])
     print('Vrel = %f' % dopout['vrel'][0])
     print('chisq = %f' % dopout['chisq'][0])
+    print('dt = %f sec.' % time.time()-t1)
     
     # Initialize allparams
     if allparams is None:
@@ -849,6 +851,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     
     # 2) specfit (Teff, logg, feh, alpha, RV)
     #----------------------------------------
+    t2 = time.time()    
     print(' ')    
     print('Step 2: Fitting Teff, logg, [FE/H], [alpha/H], and RV')
     allparams1 = allparams.copy()
@@ -869,7 +872,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     print('[alpha/H] = %f' % out1['pars'][0][3])    
     print('RV = %f' % out1['pars'][0][4])
     print('chisq = %f' % out1['chisq'][0])
-
+    print('dt = %f sec.' % time.time()-t3)
     
     # TWEAK THE NORMALIZATION HERE????
     
@@ -879,6 +882,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     
     # 3) Fit each element separately
     #-------------------------------
+    t3 = time.time()    
     print(' ')
     print('Step 3: Fitting each element separately')
     allparams2 = allparams1.copy()
@@ -905,6 +909,8 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
         #print('%s = %f' % (fitparselem[0],elemcat['par'][k]))
         #print('chisq = %f' % out2['chisq'][0])
 
+    print('dt = %f sec.' % time.time()-t3)
+
     elemcat['par'] =  [-0.141262,-0.083792,-0.356169,-0.449516,-0.412971,-0.061871,-0.191550,
                        -0.013700,-0.262991,-0.125668,-0.277579,-0.207205,-0.025872,-0.175383,
                        -0.142084,0.155856,-0.123922,-0.008116]
@@ -913,6 +919,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
 
               
     # 4) fit everything simultaneously
+    t4 = time.time()
     print('Step 4: Fit everything simultaneously')
     allparams3 = allparams2.copy()
     for k in range(nelem):
@@ -925,7 +932,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     for k in range(len(fitparams3)):
         print('%s = %f' % (fitparams3[k],out3['pars'][0][k]))
     print('chisq = %f' % out3['chisq'][0])
-    
+    print('dt = %f sec.' % time.time()-t4)
 
     import pdb; pdb.set_trace()
 
