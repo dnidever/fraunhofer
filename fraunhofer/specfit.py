@@ -140,6 +140,24 @@ class SpecFitter:
         
         return pspec.flux.flatten()
 
+    def getstep(self,name,val,relstep=0.02):
+        """ Calculate step for a parameter."""
+        # It mainly deals with edge cases
+        if val != 0.0:
+            step = relstep*val
+        else:
+            if name=='RV':
+                step = 1.0
+            elif name=='VROT':
+                step = 0.5
+            elif name=='VMICRO':
+                step = 0.5
+            elif name.endswith('_H'):
+                step = 0.02
+            else:
+                step = 0.02
+        return step
+                
     def jac(self,x,*args):
         """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
         is the partial derivative of f[i] with respect to x[j]). """
@@ -205,7 +223,7 @@ class SpecFitter:
         # Loop over parameters
         for i in range(npar):
             pars = np.array(copy.deepcopy(args))
-            step = relstep*pars[i]
+            step = self.getstep(self.fitparams[i],pars[i],relstep)
             # Check boundaries, if above upper boundary
             #   go the opposite way
             if pars[i]>ubounds[i]:
@@ -244,7 +262,12 @@ class SpecFitter:
                 import pdb; pdb.set_trace()
 
             jac[:,i] = (f1-f0)/step
-                
+
+        if np.sum(~np.isfinite(jac))>0:
+            print('some nans/infs')
+            import pdb; pdb.set_trace()
+            
+            
         return jac
 
     
@@ -597,7 +620,7 @@ def mkbounds(params):
         lbounds[g[0]] = -3
         ubounds[g[0]] = 1       
     # Vmicro
-    g, = np.where(params=='LOGG')
+    g, = np.where(params=='VMICRO')
     if len(g)>0:
         lbounds[g[0]] = 0
         ubounds[g[0]] = 5        
@@ -714,7 +737,7 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=False):
 
 
 
-def fit(spec,allparams=None,fitparams=None,verbose=False):
+def fit(spec,allparams=None,fitparams=None,elem=None,verbose=False):
     """ Fit a spectrum and determine the abundances."""
 
     # Normalize the spectrum
@@ -772,6 +795,9 @@ def fit(spec,allparams=None,fitparams=None,verbose=False):
     print('[alpha/H] = %f' % out1['pars'][0][3])    
     print('RV = %f' % out1['pars'][0][4])
     print('chisq = %f' % out1['chisq'][0])
+
+    
+    # TWEAK THE NORMALIZATION HERE????
     
 
     #import pdb; pdb.set_trace()
@@ -784,7 +810,9 @@ def fit(spec,allparams=None,fitparams=None,verbose=False):
     allparams2 = allparams1.copy()
     for k in range(len(fitparams1)):
         allparams2[fitparams1[k]] = out1['pars'][0][k]
-    elem = ['C','N','O','NA','MG','AL','SI','K','CA','TI','V','CR','MN','CO','NI','CU','CE','ND']
+    if elem is None:
+        elem = ['C','N','O','NA','MG','AL','SI','K','CA','TI','V','CR','MN','CO','NI','CU','CE','ND']
+    print('Elements: '+', '.join(elem))    
     nelem = len(elem)
     elemcat = np.zeros(nelem,dtype=np.dtype([('name',np.str,10),('par',np.float64),('parerr',np.float64)]))
     elemcat['name'] = elem
@@ -797,33 +825,38 @@ def fit(spec,allparams=None,fitparams=None,verbose=False):
         fitparselem = [elem[k]+'_H']
 
         print('Fitting '+fitparselem[0])
-        out2, model2 = fit_lsq(spec,allparselem,fitparselem,verbose=verbose)
-        elemcat['par'][k] = out2['pars'][0][0]
-        elemcat['parerr'][k] = out2['parerr'][0][0]        
-        print('%s = %f' % (elemcat['name'][k],elemcat['par'][k]))
-        print('chisq = %f' % out2['chisq'][0])
+        #out2, model2 = fit_lsq(spec,allparselem,fitparselem,verbose=verbose)
+        #elemcat['par'][k] = out2['pars'][0]
+        #elemcat['parerr'][k] = out2['parerr'][0]
+        #print('%s = %f' % (fitparselem[0],elemcat['par'][k]))
+        #print('chisq = %f' % out2['chisq'][0])
 
+    elemcat['par'] =  [-0.141262,-0.083792,-0.356169,-0.449516,-0.412971,-0.061871,-0.191550,
+                       -0.013700,-0.262991,-0.125668,-0.277579,-0.207205,-0.025872,-0.175383,
+                       -0.142084,0.155856,-0.123922,-0.008116]
+        
     import pdb; pdb.set_trace()
 
               
     # 4) fit everything simultaneously
     print('Step 4: Fit everything simultaneously')
-
-              
-    allparams1 = allparams2.copy()
-    fitparams1 = ['TEFF','LOGG','FE_H','ALPHA_H','RV']
+    allparams3 = allparams2.copy()
+    for k in range(nelem):
+        allparams3[elem[k]+'_H'] = elemcat['par'][k]
+    if allparams3.get('ALPHA_H') is not None:
+        del allparams3['ALPHA_H']
+    fitparams3 = ['TEFF','LOGG','FE_H','RV']+list(np.char.array(elem)+'_H')
+    print('Fitting = '+', '.join(fitparams3))
     out3, model3 = fit_lsq(spec,allparams3,fitparams3,verbose=verbose)
-    print('Teff = %f' % out1['pars'][0])
-    print('logg = %f' % out1['pars'][1])
-    print('[Fe/H] = %f' % out1['pars'][2])
-    print('[alpha/H] = %f' % out1['pars'][3])    
-    print('RV = %f' % out1['pars'][4])
-    print('chisq = %f' % out1['chisq'][0])
+    for k in range(len(fitparams3)):
+        print('%s = %f' % (fitparams3[k],out3['pars'][0][k]))
+    print('chisq = %f' % out3['chisq'][0])
     
 
     import pdb; pdb.set_trace()
 
-              
+
+    # Make final structure and save a figure
     
 
     return out, model
