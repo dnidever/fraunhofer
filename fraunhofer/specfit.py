@@ -58,6 +58,7 @@ class SpecFitter:
             self.fitparams = fitparams
         else:
             self.fitparams = list(allparams.keys())  # by default fit all parameters            
+        self.nsynfev = 0  # number of synthetic spectra made
         # Save spectrum information    
         self.spec = spec.copy()
         self.flux = spec.flux.flatten()
@@ -134,6 +135,7 @@ class SpecFitter:
             print(inputs)
         # Create the synthetic spectrum
         synspec = model_spectrum(inputs,verbose=self.verbose)   # always returns air wavelengths
+        self.nsynfev += 1
         # Convolve with the LSF and do air/vacuum wave conversion
         pspec = prepare_synthspec(synspec,self.lsf)
         # Return flattened spectrum
@@ -202,6 +204,7 @@ class SpecFitter:
         tinputs['VROT'] = 0
         tinputs['RV'] = 0
         origspec = model_spectrum(tinputs,keepextend=True)  # always are wavelengths
+        self.nsynfev += 1
         # Smooth and shift
         smorigspec = smoothshift_spectrum(origspec,vrot=vrot,vmicro=vmicro,rv=rv)
         # Trim to final wavelengths
@@ -247,7 +250,8 @@ class SpecFitter:
                 synspec = trim_spectrum(synspec,w0,w1)
             else:
                 synspec = model_spectrum(tinputs)  # always returns air wavelengths
-
+                self.nsynfev += 1
+                
             # Convert to vacuum wavelengths if necessary
             if self.wavevac:
                 synspec.wave = astro.airtovac(synspec.wave)
@@ -934,6 +938,15 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     print('chisq = %f' % out3['chisq'][0])
     print('dt = %f sec.' % time.time()-t4)
 
+    #[ 5.43544714e+03,  3.84329467e+00, -7.26117984e-02,
+    #     6.83690973e+00, -2.44397439e-01,  7.38926499e-01,
+    #     4.08746274e-01,  8.86895925e-02, -2.83005597e-01,
+    #     1.06662820e-01, -8.37567519e-02,  1.18361180e-01,
+    #    -9.19295147e-02,  2.44524380e-01,  1.56043322e-01,
+    #    -3.22753633e-02,  1.62860666e-01, -1.95083709e-02,
+    #    -9.50147946e-03,  2.96905740e-01, -2.96000000e+00,
+    #    -8.11600000e-03]
+    
     import pdb; pdb.set_trace()
 
 
