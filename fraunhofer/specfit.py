@@ -1069,9 +1069,9 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
         for k in range(nelem):
             allparselem = allparams4.copy()
             if elem[k] in ['O','MG','SI','S','CA','TI']:
-                allparselem[elem[k]+'_H'] = allparams3['ALPHA_H']
+                allparselem[elem[k]+'_H'] = allparams4['ALPHA_H']
             else:
-                allparselem[elem[k]+'_H'] = allparams3['FE_H']
+                allparselem[elem[k]+'_H'] = allparams4['FE_H']
             fitparselem = [elem[k]+'_H']
 
             logger.info('Fitting '+fitparselem[0])
