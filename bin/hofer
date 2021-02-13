@@ -9,12 +9,16 @@ from astropy.io import fits
 from astropy.table import Table
 from argparse import ArgumentParser
 from dlnpyutils import utils as dln
+import numpy as np
 import subprocess
 
 # Main command-line program
 if __name__ == "__main__":
     parser = ArgumentParser(description='Run Fraunhofer fitting on spectra')
     parser.add_argument('files', type=str, nargs='*', help='Spectrum FITS files')
+    parser.add_argument('-f','--fpars', type=str, nargs=1, default='', help='List of parameteres to fit')
+    parser.add_argument('-e','--elem', type=str, nargs=1, default='', help='List of elements to fit')    
+    parser.add_argument('-i','--init', type=str, nargs=1, default='', help='Initial parameters to use')    
     parser.add_argument('--outfile', type=str, nargs=1, default='', help='Output filename')
     parser.add_argument('--figfile', type=str, nargs=1, default='', help='Figure filename')
     parser.add_argument('-d','--outdir', type=str, nargs=1, default='', help='Output directory')        
@@ -22,8 +26,13 @@ if __name__ == "__main__":
     parser.add_argument('-p','--plot', action='store_true', help='Save the plots')
     parser.add_argument('-r','--reader', type=str, nargs=1, default='', help='The spectral reader to use')
     parser.add_argument('-v','--verbose', action='store_true', help='Verbose output')
+
     args = parser.parse_args()
 
+    # input elements to fit
+    # input init guesses for parameters
+
+    
     t0 = time.time()
     files = args.files
     inpoutfile = dln.first_el(args.outfile)
@@ -35,7 +44,37 @@ if __name__ == "__main__":
     if reader == '': reader = None
     saveplot = args.plot
     inlist = dln.first_el(args.list)
-    
+    # Elements to fit
+    elem = dln.first_el(args.elem)
+    if elem != '':
+        elem = elem.split(',')
+        elem = list(np.char.array(elem).upper())
+    else:
+        elem = None
+    # Parameters to fit
+    fpars = dln.first_el(args.fpars)
+    if fpars != '':
+        fpars = fpars.split(',')
+        fpars = list(np.char.array(fpars).upper())
+    else:
+        fpars = None
+    # Initial parameter values dictionary
+    init = dln.first_el(args.init)
+    if init != '':
+        init = init.split(',')
+        allparams = {}
+        for k,init1 in enumerate(init):
+            if init1.find(':') != -1:
+                arr = init1.split(':')
+            elif init1.find('=') != -1:
+                arr = init1.split('=')
+            else:
+                raise ValueError('Use format key=value or key:value')
+            allparams[str(arr[0]).upper()] = float(arr[1])
+    else:
+        allparams = None
+
+        
     # Load files from a list
     if (len(files)==0) & (inlist!=''):
         # Check that file exists
@@ -45,10 +84,10 @@ if __name__ == "__main__":
         files = dln.readlines(inlist)
     nfiles = len(files)
 
-    # Outfile and figfile can ONLY be used with a SINGLE file or JOINT fitting
-    if (inpoutfile!='') & (nfiles>1) & (joint is False):
+    # Outfile and figfile can ONLY be used with a SINGLE file
+    if (inpoutfile!='') & (nfiles>1):
         raise ValueError('--outfile can only be used with a SINGLE input file')
-    if (inpfigfile!='') & (nfiles>1) & (joint is False):
+    if (inpfigfile!='') & (nfiles>1):
         raise ValueError('--figfile can only be used with a SINGLE input file')
 
     if (verbose is True) & (nfiles>1):
@@ -80,10 +119,11 @@ if __name__ == "__main__":
             if outdir is not None: figfile = outdir+'/'+figfile
             if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile 
 
-        # NEED TO INPUT FITTING PARAMETERS
+        # HAVE A FLAG TO CALL FIT_SQL() DIRECTLY????
             
         # Run Fraunhofer
-        out, model = specfit.fit(spec,figfile=figfile,verbose=verbose)
+        out, model = specfit.fit(spec,allparams=allparams,fitparams=fpars,
+                                 elem=elem,figfile=figfile,verbose=verbose)
             
         # Save the output
         if inpoutfile!='':

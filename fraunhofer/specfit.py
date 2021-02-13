@@ -164,12 +164,17 @@ class SpecFitter:
         """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
         is the partial derivative of f[i] with respect to x[j]). """
 
-        print(args)
+        if hasattr(self,'logger') is False:
+            logger = dln.basiclogger()
+        else:
+            logger = self.logger
+            
+        logger.info(args)
         
         if self.verbose:
-            print(' ')
-            print('##### Calculating Jacobian Matrix #####')
-            print(' ')
+            logger.info(' ')
+            logger.info('##### Calculating Jacobian Matrix #####')
+            logger.info(' ')
         
         # A new synthetic spectrum does not need to be generated RV, vmicro or vsini.
         # Some time can be saved by not remaking those.
@@ -197,8 +202,8 @@ class SpecFitter:
         # Create synthetic spectrum at current values
         #  set vrot=vmicro=rv=0, will modify later if necessary
         if self.verbose:
-            print('--- Current values ---')
-            print(args)
+            logger.info('--- Current values ---')
+            logger.info(args)
         tinputs = inputs.copy()
         tinputs['VMICRO'] = 0
         tinputs['VROT'] = 0
@@ -216,7 +221,7 @@ class SpecFitter:
 
         chisq = np.sqrt( np.sum( (self.flux-f0)**2/self.err**2 )/len(self.flux) )
         if self.verbose:
-            print('chisq = '+str(chisq))
+            logger.info('chisq = '+str(chisq))
         
         # MASK PIXELS!?
         
@@ -235,9 +240,9 @@ class SpecFitter:
             tinputs = self.mkinputs(pars)
 
             if self.verbose:
-                print(' ')
-                print('--- '+str(i+1)+' '+self.fitparams[i]+' '+str(pars[i])+' ---')
-                print(pars)
+                logger.info(' ')
+                logger.info('--- '+str(i+1)+' '+self.fitparams[i]+' '+str(pars[i])+' ---')
+                logger.info(pars)
             # VROT/VMICRO/RV, just shift/smooth original spectrum
             if self.fitparams[i]=='VROT' or self.fitparams[i]=='VMICRO' or self.fitparams[i]=='RV':
                 tvrot = tinputs.get('VROT')
@@ -448,7 +453,7 @@ def smoothshift_spectrum(inpspec,vmicro=None,vrot=None,rv=None):
 
     # Some broadening
     if vmicro is not None or vrot is not None:
-        flux = doppler.utils.broaden(spec.wave,spec.flux,vgauss=vmicro,vsini=vrot)
+        flux = utils.broaden(spec.wave,spec.flux,vgauss=vmicro,vsini=vrot)
         spec.flux = flux
             
     ## Vrot/Vsini (km/s) and Vmicro (in km/s)
@@ -758,10 +763,112 @@ def specfigure(figfile,spec,fmodel,out,original=None,verbose=True,figsize=10):
     if verbose is True: print('Figure saved to '+figfile)
 
 
+def dopvrot_lsq(spec,models=None,initpar=None,verbose=False,logger=None):
+    """
+    Least Squares fitting with forward modeling of the spectrum.
+    
+    Parameters
+    ----------
+    spec : Spec1D object
+         The observed spectrum to match.
+    models : list of Cannon models, optional
+         A list of Cannon models to use.  The default is to load all of the Cannon
+         models in the data/ directory and use those.
+    initpar : numpy array, optional
+         Initial estimate for [teff, logg, feh, RV, vsini], optional.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
 
-def fit_lsq(spec,allparams,fitparams=None,verbose=False):
+    Returns
+    -------
+    out : numpy structured array
+         The output structured array of the final derived RVs, stellar parameters and errors.
+    bmodel : Spec1D object
+         The best-fitting Cannon model spectrum (as Spec1D object).
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         out, bmodel = fit_lsq(spec)
+
+    """
+    
+    if logger is None:
+        logger = dln.basiclogger()
+
+    # Load and prepare the Cannon models
+    #-------------------------------------------
+    if models is None:
+        models = cannon.models.copy()
+        models.prepare(spec)
+    
+    # Get initial estimates
+    if initpar is None:
+        initpar = np.array([6000.0, 2.5, -0.5, 0.0, 0.0])
+    initpar = np.array(initpar).flatten()
+    
+    # Calculate the bounds
+    lbounds = np.zeros(5,float)+1e5
+    ubounds = np.zeros(5,float)-1e5
+    for p in models:
+        lbounds[0:3] = np.minimum(lbounds[0:3],np.min(p.ranges,axis=1))
+        ubounds[0:3] = np.maximum(ubounds[0:3],np.max(p.ranges,axis=1))
+    lbounds[3] = -1000
+    ubounds[3] = 1000
+    lbounds[4] = 0.0
+    ubounds[4] = 500.0
+    bounds = (lbounds, ubounds)
+    
+    # function to use with curve_fit
+    def spec_interp_vsini(x,teff,logg,feh,rv,vsini):
+        """ This returns the interpolated model for a given spectrum."""
+        # The "models" and "spec" must already exist outside of this function
+        m = models(teff=teff,logg=logg,feh=feh,rv=rv)
+        if m is None:      # there was a problem
+            return np.zeros(spec.flux.shape,float).flatten()+1e30
+        # Broaden to vsini
+        if spec.norder>1:
+            smflux = spec.flux*0
+            for k in range(spec.norder):
+                smflux[:,k] = utils.broaden(m.wave[:,k],m.flux[:,k],vsini=vsini)            
+        else:
+            smflux = utils.broaden(m.wave.flatten(),m.flux.flatten(),vsini=vsini)
+        return smflux.flatten()
+    
+    # Use curve_fit
+    lspars, lscov = curve_fit(spec_interp_vsini, spec.wave.flatten(), spec.flux.flatten(), sigma=spec.err.flatten(),
+                              p0=initpar, bounds=bounds)
+    # If it hits a boundary then the solution won't change much compared to initpar
+    # setting absolute_sigma=True gives crazy low lsperror values
+    lsperror = np.sqrt(np.diag(lscov))
+    
+    if verbose is True:
+        logger.info('Least Squares RV and stellar parameters:')
+        printpars(lspars)
+    lsmodel = spec_interp_vsini(spec.wave,teff=lspars[0],logg=lspars[1],feh=lspars[2],rv=lspars[3],vsini=lspars[4])
+    lschisq = np.sqrt(np.sum(((spec.flux.flatten()-lsmodel)/spec.err.flatten())**2)/len(lsmodel))
+    if verbose is True: logger.info('chisq = %5.2f' % lschisq)
+
+    # Put it into the output structure
+    npar = len(lspars)
+    dtype = np.dtype([('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),('chisq',float)])
+    out = np.zeros(1,dtype=dtype)
+    out['pars'] = lspars
+    out['parerr'] = lsperror
+    out['parcov'] = lscov
+    out['chisq'] = lschisq
+    
+    return out, lsmodel
+
+
+def fit_lsq(spec,allparams,fitparams=None,verbose=False,logger=None):
     """ Fit parameters using least-squares."""
 
+    if logger is None:
+        logger = dln.basiclogger()
+    
     # Normalize the spectrum
     if spec.normalized==False:
         spec.normalize()
@@ -778,11 +885,12 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=False):
     
     # Initialize the fitter
     spfitter = SpecFitter(spec,allparams,fitparams=fitparams,verbose=verbose)
+    spfitter.logger = logger
     pinit = initpars(allparams,fitparams)
     bounds = mkbounds(fitparams)
 
     if verbose:
-        print('Fitting: '+', '.join(fitparams))
+        logger.info('Fitting: '+', '.join(fitparams))
         
     # Fit the spectrum using curve_fit
     pars, cov = curve_fit(spfitter.model,spfitter.wave,spfitter.flux,
@@ -790,21 +898,23 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=False):
     error = np.sqrt(np.diag(cov))
 
     if verbose is True:
-        print('Least Squares values:')
+        logger.info('Least Squares values:')
         for k in range(npar):
-            print(fitparams[k]+': '+str(pars[k]))
+            logger.info(fitparams[k]+': '+str(pars[k]))
     model = spfitter.model(spfitter.wave,*pars)
     chisq = np.sqrt(np.sum(((spfitter.flux-model)/spfitter.err)**2)/len(model))
     if verbose:
-        print('chisq = %5.2f' % chisq)
+        logger.info('chisq = %5.2f' % chisq)
 
     # Put it into the output structure
-    dtype = np.dtype([('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),('chisq',float)])
+    dtype = np.dtype([('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),
+                      ('chisq',float),('nsynfev',int)])
     out = np.zeros(1,dtype=dtype)
     out['pars'] = pars
     out['parerr'] = error
     out['parcov'] = cov
     out['chisq'] = chisq
+    out['nsynfev'] = spfitter.nsynfev
 
     # Reshape final model spectrum
     model = model.reshape(spec.flux.shape)
@@ -817,6 +927,12 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     """ Fit a spectrum and determine the abundances."""
 
     t0 = time.time()
+
+    logger = dln.basiclogger()
+
+    # Default set of elements
+    if elem is None:
+        elem = ['C','N','O','NA','MG','AL','SI','K','CA','TI','V','CR','MN','CO','NI','CU','CE','ND']
     
     # Normalize the spectrum
     if spec.normalized==False:
@@ -825,119 +941,182 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     # 1) Doppler (Teff, logg, feh, RV)
     #---------------------------------
     t1 = time.time()
-    print('Step 1: Running Doppler')        
+    logger.info('Step 1: Running Doppler')        
     # Use Doppler to get initial guess of stellar parameters and RV
     dopout, dopfmodel, dopspecm = doppler.fit(spec)
-    print('Teff = %f' % dopout['teff'][0])
-    print('logg = %f' % dopout['logg'][0])
-    print('[Fe/H] = %f' % dopout['feh'][0])
-    print('Vrel = %f' % dopout['vrel'][0])
-    print('chisq = %f' % dopout['chisq'][0])
-    print('dt = %f sec.' % time.time()-t1)
+    logger.info('Teff = %f' % dopout['teff'][0])
+    logger.info('logg = %f' % dopout['logg'][0])
+    logger.info('[Fe/H] = %f' % dopout['feh'][0])
+    logger.info('Vrel = %f' % dopout['vrel'][0])
+    logger.info('chisq = %f' % dopout['chisq'][0])
+    logger.info('dt = %f sec.' % (time.time()-t1))
+    # typically 5 sec
     
+
+    # 2) Fit vsini as well with Doppler model
+    #-----------------------------------------
+    t2 = time.time()    
+    logger.info(' ')    
+    logger.info('Step 2: Fitting vsini with Doppler model')
+    initpar2 = [dopout['teff'][0], dopout['logg'][0], dopout['feh'][0], dopout['vrel'][0], 10.0]
+    out2, model2 = dopvrot_lsq(spec,initpar=initpar2,verbose=verbose,logger=logger)
+    logger.info('Teff = %f' % out2['pars'][0][0])
+    logger.info('logg = %f' % out2['pars'][0][1])
+    logger.info('[Fe/H] = %f' % out2['pars'][0][2])
+    logger.info('Vrel = %f' % out2['pars'][0][3])
+    logger.info('Vsini = %f' % out2['pars'][0][4])
+    logger.info('chisq = %f' % out2['chisq'][0])
+    logger.info('dt = %f sec.' % (time.time()-t2))
+    # typically 5 sec
+
     # Initialize allparams
     if allparams is None:
         allparams = {}
-    allparams['TEFF'] = dopout['teff'][0]
-    allparams['LOGG'] = dopout['logg'][0]
-    allparams['FE_H'] = dopout['feh'][0]
-    allparams['RV'] = dopout['vrel'][0]
+    allparams['TEFF'] = out2['pars'][0][0]
+    allparams['LOGG'] = out2['pars'][0][1]
+    allparams['FE_H'] = out2['pars'][0][2]
+    allparams['RV'] = out2['pars'][0][3]
+    allparams['VROT'] = out2['pars'][0][4]
     allparams = dict((key.upper(), value) for (key, value) in allparams.items())  # all CAPS
 
 
+    # Get Vmicro using Teff/logg relation
+    # APOGEE DR14 vmicro relation (Holtzman et al. 2018)
+    # for stars with [M/H]>-1 and logg<3.8
+    # vmicro = 10^(0.226−0.0228*logg+0.0297*(logg)^2−0.0113*(logg)^3 )
+    # coef = [0.226,0.0228,0.0297,−0.0113]
+    # only giants, was fit in dwarfs
+    if allparams.get('VMICRO') is None:
+        vmicro = 2.0  # default
+        if allparams['LOGG']<3.8:
+            vmcoef = [0.226,0.0228,0.0297,-0.0113]
+            vmicro = 10**dln.poly(allparams['LOGG'],vmcoef[::-1])
+        allparams['VMICRO'] = vmicro
+
+    # for giants
+    # vmacro = 10^(0.741−0.0998*logg−0.225[M/H])
+    # maximum of 15 km/s
+    
+
     # Initialize fitparams
-    if fitparams is None:
-        fitparams = list(allparams.keys())
-    fitparams = [v.upper() for v in fitparams]   # all CAPS
+    #if fitparams is None:
+    #    fitparams = list(allparams.keys())
+    #fitparams = [v.upper() for v in fitparams]   # all CAPS
 
-
-    #import pdb; pdb.set_trace()
-    
-    # 2) specfit (Teff, logg, feh, alpha, RV)
-    #----------------------------------------
-    t2 = time.time()    
-    print(' ')    
-    print('Step 2: Fitting Teff, logg, [FE/H], [alpha/H], and RV')
-    allparams1 = allparams.copy()
-    fitparams1 = ['TEFF','LOGG','FE_H','ALPHA_H','RV']
-    #out1, model1 = fit_lsq(spec,allparams1,fitparams1,verbose=verbose)
-
-    
-    dtype = np.dtype([('pars',float,5),('parerr',float,5),('parcov',float,(5,5)),('chisq',float)])
-    out1 = np.zeros(1,dtype=dtype)
-    out1['pars'][0] = [ 5.10465480e+03,  3.57491204e+00, -1.65229131e-01, -3.06759473e-01,  6.81550572e+00]
-    out1['parerr'][0] = [9.97215673e+00, 1.62189664e-02, 5.99211701e-03, 7.79013094e-03, 2.96506687e-02]
-    out1['chisq'][0] = 8.28033419
-    
-    
-    print('Teff = %f' % out1['pars'][0][0])
-    print('logg = %f' % out1['pars'][0][1])
-    print('[Fe/H] = %f' % out1['pars'][0][2])
-    print('[alpha/H] = %f' % out1['pars'][0][3])    
-    print('RV = %f' % out1['pars'][0][4])
-    print('chisq = %f' % out1['chisq'][0])
-    print('dt = %f sec.' % time.time()-t3)
-    
-    # TWEAK THE NORMALIZATION HERE????
-    
-
-    #import pdb; pdb.set_trace()
-    
-    
-    # 3) Fit each element separately
-    #-------------------------------
-    t3 = time.time()    
-    print(' ')
-    print('Step 3: Fitting each element separately')
-    allparams2 = allparams1.copy()
-    for k in range(len(fitparams1)):
-        allparams2[fitparams1[k]] = out1['pars'][0][k]
-    if elem is None:
-        elem = ['C','N','O','NA','MG','AL','SI','K','CA','TI','V','CR','MN','CO','NI','CU','CE','ND']
-    print('Elements: '+', '.join(elem))    
-    nelem = len(elem)
-    elemcat = np.zeros(nelem,dtype=np.dtype([('name',np.str,10),('par',np.float64),('parerr',np.float64)]))
-    elemcat['name'] = elem
-    for k in range(nelem):
-        allparselem = allparams2.copy()
-        if elem[k] in ['O','MG','SI','S','CA','TI']:
-            allparselem[elem[k]+'_H'] = allparams2['ALPHA_H']
-        else:
-            allparselem[elem[k]+'_H'] = allparams2['FE_H']
-        fitparselem = [elem[k]+'_H']
-
-        print('Fitting '+fitparselem[0])
-        #out2, model2 = fit_lsq(spec,allparselem,fitparselem,verbose=verbose)
-        #elemcat['par'][k] = out2['pars'][0]
-        #elemcat['parerr'][k] = out2['parerr'][0]
-        #print('%s = %f' % (fitparselem[0],elemcat['par'][k]))
-        #print('chisq = %f' % out2['chisq'][0])
-
-    print('dt = %f sec.' % time.time()-t3)
-
-    elemcat['par'] =  [-0.141262,-0.083792,-0.356169,-0.449516,-0.412971,-0.061871,-0.191550,
-                       -0.013700,-0.262991,-0.125668,-0.277579,-0.207205,-0.025872,-0.175383,
-                       -0.142084,0.155856,-0.123922,-0.008116]
         
-    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
+        
+    
+    # 3) Fit stellar parameters (Teff, logg, feh, alpha, RV, Vsini)
+    #--------------------------------------------------------------
+    t3 = time.time()    
+    logger.info(' ')
+    logger.info('Step 3: Fitting stellar parameters, RV and broadening')
+    allparams3 = allparams.copy()
+    fitparams3 = ['TEFF','LOGG','FE_H','ALPHA_H','RV','VROT']
+    # Fit Vmicro as well if it's a dwarf
+    if allparams3['LOGG']>3.8 or allparams3['TEFF']>8000:
+        fparams3.append('VMICRO')
+    logger.info('Fitting = '+', '.join(fitparams3))
+        
+    out3, model3 = fit_lsq(spec,allparams3,fitparams3,verbose=verbose,logger=logger)
+
+    #import pdb; pdb.set_trace()
+    
+    # Should we fit C_H and N_H as well??
+    
+    #dtype = np.dtype([('pars',float,5),('parerr',float,5),('parcov',float,(5,5)),('chisq',float)])
+    #out1 = np.zeros(1,dtype=dtype)
+    #out1['pars'][0] = [ 5.10465480e+03,  3.57491204e+00, -1.65229131e-01, -3.06759473e-01,  6.81550572e+00]
+    #out1['parerr'][0] = [9.97215673e+00, 1.62189664e-02, 5.99211701e-03, 7.79013094e-03, 2.96506687e-02]
+    #out1['chisq'][0] = 8.28033419
+    
+    
+    logger.info('Teff = %f' % out3['pars'][0][0])
+    logger.info('logg = %f' % out3['pars'][0][1])
+    logger.info('[Fe/H] = %f' % out3['pars'][0][2])
+    logger.info('[alpha/H] = %f' % out3['pars'][0][3])    
+    logger.info('RV = %f' % out3['pars'][0][4])
+    logger.info('Vsini = %f' % out3['pars'][0][5])
+    if 'VMICRO' in fitparams3:
+        logger.info('Vmicro = %f' % out3['pars'][0][6])        
+    logger.info('chisq = %f' % out3['chisq'][0])
+    logger.info('dt = %f sec.' % (time.time()-t3))
+    # typically 12-15 min.
+
+    
+    # Tweak the continuum
+    if verbose:
+        logger.info('Tweaking continuum using best-fit synthetic model')
+    tmodel = Spec1D(model3,wave=spec.wave.copy(),lsfpars=np.array(0.0))        
+    spec = doppler.rv.tweakcontinuum(spec,tmodel)
+
+    
+    
+    # 4) Fit each element separately
+    #-------------------------------
+    t4 = time.time()    
+    logger.info(' ')
+    logger.info('Step 4: Fitting each element separately')
+    allparams4 = allparams3.copy()
+    for k in range(len(fitparams3)):
+        allparams4[fitparams3[k]] = out3['pars'][0][k]
+    nelem = len(elem)
+    if nelem>0:
+        logger.info('Elements: '+', '.join(elem))    
+        elemcat = np.zeros(nelem,dtype=np.dtype([('name',np.str,10),('par',np.float64),('parerr',np.float64)]))
+        elemcat['name'] = elem
+        for k in range(nelem):
+            allparselem = allparams4.copy()
+            if elem[k] in ['O','MG','SI','S','CA','TI']:
+                allparselem[elem[k]+'_H'] = allparams3['ALPHA_H']
+            else:
+                allparselem[elem[k]+'_H'] = allparams3['FE_H']
+            fitparselem = [elem[k]+'_H']
+
+            logger.info('Fitting '+fitparselem[0])
+            out4, model4 = fit_lsq(spec,allparselem,fitparselem,verbose=verbose,logger=logger)
+            elemcat['par'][k] = out4['pars'][0]
+            elemcat['parerr'][k] = out4['parerr'][0]
+            logger.info('%s = %f' % (fitparselem[0],elemcat['par'][k]))
+            logger.info('chisq = %f' % out4['chisq'][0])
+            logger.info('dt = %f sec.' % (time.time()-t4))
+    else:
+        logger.info('No elements to fit')
+            
+    #elemcat['par'] =  [-0.141262,-0.083792,-0.356169,-0.449516,-0.412971,-0.061871,-0.191550,
+    #                   -0.013700,-0.262991,-0.125668,-0.277579,-0.207205,-0.025872,-0.175383,
+    #                   -0.142084,0.155856,-0.123922,-0.008116]
+        
+    #import pdb; pdb.set_trace()
 
               
-    # 4) fit everything simultaneously
-    t4 = time.time()
-    print('Step 4: Fit everything simultaneously')
-    allparams3 = allparams2.copy()
-    for k in range(nelem):
-        allparams3[elem[k]+'_H'] = elemcat['par'][k]
-    if allparams3.get('ALPHA_H') is not None:
-        del allparams3['ALPHA_H']
-    fitparams3 = ['TEFF','LOGG','FE_H','RV']+list(np.char.array(elem)+'_H')
-    print('Fitting = '+', '.join(fitparams3))
-    out3, model3 = fit_lsq(spec,allparams3,fitparams3,verbose=verbose)
-    for k in range(len(fitparams3)):
-        print('%s = %f' % (fitparams3[k],out3['pars'][0][k]))
-    print('chisq = %f' % out3['chisq'][0])
-    print('dt = %f sec.' % time.time()-t4)
-
+    # 5) Fit all parameters simultaneously
+    #---------------------------------------    
+    #     if NO elements to fit, then nothing to do
+    if nelem>0:
+        t5 = time.time()
+        logger.info('Step 5: Fit all parameters simultaneously')
+        allparams5 = allparams4.copy()
+        for k in range(nelem):
+            allparams5[elem[k]+'_H'] = elemcat['par'][k]
+        if allparams5.get('ALPHA_H') is not None:
+            del allparams5['ALPHA_H']
+        fitparams5 = ['TEFF','LOGG','FE_H','RV','VROT']
+        if 'VMICRO' in fitparams3:
+            fitparams5.append('VMICRO')
+        fitparams5 = fitparams5+list(np.char.array(elem)+'_H')
+        logger.info('Fitting = '+', '.join(fitparams5))
+        out5, model5 = fit_lsq(spec,allparams5,fitparams5,verbose=verbose,logger=logger)
+        for k in range(len(fitparams5)):
+            logger.info('%s = %f' % (fitparams5[k],out5['pars'][0][k]))
+            logger.info('chisq = %f' % out5['chisq'][0])
+            logger.info('dt = %f sec.' % (time.time()-t5))
+    else:
+        out5 = out3
+        model5 = model3
+        fitparams5 = fitparams3
+            
     #[ 5.43544714e+03,  3.84329467e+00, -7.26117984e-02,
     #     6.83690973e+00, -2.44397439e-01,  7.38926499e-01,
     #     4.08746274e-01,  8.86895925e-02, -2.83005597e-01,
@@ -947,17 +1126,33 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     #    -9.50147946e-03,  2.96905740e-01, -2.96000000e+00,
     #    -8.11600000e-03]
     
-    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
 
 
     # Make final structure and save the figure
-    out = out3
-    model = Spec1D(model3,wave=spec.wave.copy(),lsfpars=np.array(0.0))
+    out = out5
+    dtyp = []
+    npar = len(fitparams5)
+    for f in fitparams5:
+        dtyp += [(f,float),(f+'_ERR',float)]
+    dtyp += [('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),('chisq',float)]
+    dtype = np.dtype(dtyp)
+    out = np.zeros(1,dtype=dtype)
+    for k,f in enumerate(fitparams5):
+        out[f] = out5['pars'][0][k]
+        out[f+'_ERR'] = out5['parerr'][0][k]        
+    out['pars'] = out5['pars'][0]
+    out['parerr'] = out5['parerr'][0]
+    out['parcov'] = out5['parcov'][0]
+    out['chisq'] = out5['chisq'][0]
+    # Final model
+    model = Spec1D(model5,wave=spec.wave.copy(),lsfpars=np.array(0.0))
     model.lsf = spec.lsf.copy()
+    # Make figure
     if figfile is not None:
         specfigure(figfile,spec,model,out,verbose=verbose)
 
     if verbose:
-        print('dt = %f sec.' % time.time()-t0)
+        logger.info('dt = %f sec.' % (time.time()-t0))
         
     return out, model
