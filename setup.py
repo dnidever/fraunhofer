@@ -10,7 +10,7 @@ setup(name='Fraunhofer',
       author_email='dnidever@montana.edu',
       url='https://github.com/dnidever/fraunhofer',
       packages=find_packages(exclude=["tests"]),
-      scripts=['bin/fraunhofer'],
+      scripts=['bin/hofer'],
       requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils','doppler'],
       #include_package_data=True,
 )
