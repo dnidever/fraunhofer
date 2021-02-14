@@ -22,7 +22,9 @@ from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation
 from astropy.wcs import WCS
 from scipy.ndimage.filters import median_filter,gaussian_filter1d
-from scipy.optimize import curve_fit, least_squares
+#from scipy.optimize import curve_fit, least_squares
+from minpack import curve_fit
+import least_squares
 from scipy.interpolate import interp1d
 import thecannon as tc
 from dlnpyutils import utils as dln, bindata, astro
@@ -59,6 +61,7 @@ class SpecFitter:
         else:
             self.fitparams = list(allparams.keys())  # by default fit all parameters            
         self.nsynfev = 0  # number of synthetic spectra made
+        self.njac = 0     # number of times jacobian called
         # Save spectrum information    
         self.spec = spec.copy()
         self.flux = spec.flux.flatten()
@@ -94,6 +97,10 @@ class SpecFitter:
         self._dwair = np.min(mindw)    # IN AIR WAVELENGTHS!!
         self._w0air = np.min(wave)
         self._w1air = np.max(wave)
+        # parameters to save
+        self._all_pars = []
+        self._all_model = []
+        self._all_chisq = []
 
     @property
     def allparams(self):
@@ -123,6 +130,9 @@ class SpecFitter:
         inputs['W0'] = self._w0air
         inputs['W1'] = self._w1air
         return inputs
+
+    def chisq(self,model):
+        return np.sqrt( np.sum( (self.flux-model)**2/self.err**2 )/len(self.flux) )
         
     def model(self, xx, *args):
         """ Return a model spectrum flux with the given input arguments."""
@@ -138,8 +148,11 @@ class SpecFitter:
         self.nsynfev += 1
         # Convolve with the LSF and do air/vacuum wave conversion
         pspec = prepare_synthspec(synspec,self.lsf)
-        # Return flattened spectrum
-        
+        # Save models/pars/chisq
+        self._all_pars.append(list(args).copy())
+        self._all_model.append(pspec.flux.flatten().copy())
+        self._all_chisq.append(self.chisq(pspec.flux.flatten()))
+        # Return flattened spectrum        
         return pspec.flux.flatten()
 
     def getstep(self,name,val,relstep=0.02):
@@ -218,8 +231,12 @@ class SpecFitter:
         pspec = prepare_synthspec(smorigspec,self.lsf)
         # Flatten the spectrum
         f0 = pspec.flux.flatten()
-
+        # Save models/pars/chisq
+        self._all_pars.append(list(args).copy())
+        self._all_model.append(f0.copy())
+        self._all_chisq.append(self.chisq(f0))
         chisq = np.sqrt( np.sum( (self.flux-f0)**2/self.err**2 )/len(self.flux) )
+        self
         if self.verbose:
             logger.info('chisq = '+str(chisq))
         
@@ -265,6 +282,11 @@ class SpecFitter:
             pspec = prepare_synthspec(synspec,self.lsf)
             # Flatten the spectrum
             f1 = pspec.flux.flatten()
+
+            # Save models/pars/chisq
+            self._all_pars.append(pars.copy())
+            self._all_model.append(f1.copy())
+            self._all_chisq.append(self.chisq(f1))
             
             if np.sum(~np.isfinite(f1))>0:
                 print('some nans/infs')
@@ -275,7 +297,10 @@ class SpecFitter:
         if np.sum(~np.isfinite(jac))>0:
             print('some nans/infs')
             import pdb; pdb.set_trace()
+
+        self._jac_array = jac.copy()   # keep a copy
             
+        self.njac += 1
             
         return jac
 
@@ -653,6 +678,28 @@ def mkbounds(params):
     return bounds
 
 
+def mkdxlim(fitparams):
+    """ Make array of parameter changes at which curve_fit should finish."""
+    npar = len(fitparams)
+    dx_lim = np.zeros(npar,float)
+    for k in range(npar):
+        if fitparams[k]=='TEFF':
+            dx_lim[k] = 1.0
+        elif fitparams[k]=='LOGG':
+            dx_lim[k] = 0.005
+        elif fitparams[k]=='VMICRO':
+            dx_lim[k] = 0.1
+        elif fitparams[k]=='VROT':
+            dx_lim[k] = 0.1
+        elif fitparams[k]=='RV':
+            dx_lim[k] = 0.01
+        elif fitparams[k].endswith('_H'):
+            dx_lim[k] = 0.005
+        else:
+            dx_lim[k] = 0.01
+    return dx_lim
+
+    
 def initpars(allparams,fitparams):
     """ Make initial set of parameters given ALLPARAMS and
         FITPARAMS."""
@@ -893,7 +940,8 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=False,logger=None):
         logger.info('Fitting: '+', '.join(fitparams))
         
     # Fit the spectrum using curve_fit
-    pars, cov = curve_fit(spfitter.model,spfitter.wave,spfitter.flux,
+    dx_lim = mkdxlim(fitparams)
+    pars, cov = curve_fit(spfitter.model,spfitter.wave,spfitter.flux,dx_lim=dx_lim,
                           sigma=spfitter.err,p0=pinit,bounds=bounds,jac=spfitter.jac)
     error = np.sqrt(np.diag(cov))
 
@@ -918,7 +966,7 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=False,logger=None):
 
     # Reshape final model spectrum
     model = model.reshape(spec.flux.shape)
-
+    
     return out, model
 
 
@@ -958,7 +1006,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     t2 = time.time()    
     logger.info(' ')    
     logger.info('Step 2: Fitting vsini with Doppler model')
-    initpar2 = [dopout['teff'][0], dopout['logg'][0], dopout['feh'][0], dopout['vrel'][0], 10.0]
+    initpar2 = [dopout['teff'][0], dopout['logg'][0], dopout['feh'][0], dopout['vrel'][0], 2.0]
     out2, model2 = dopvrot_lsq(spec,initpar=initpar2,verbose=verbose,logger=logger)
     logger.info('Teff = %f' % out2['pars'][0][0])
     logger.info('logg = %f' % out2['pars'][0][1])
@@ -968,7 +1016,12 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     logger.info('chisq = %f' % out2['chisq'][0])
     logger.info('dt = %f sec.' % (time.time()-t2))
     # typically 5 sec
+    if out2['chisq'][0] > dopout['chisq'][0]:
+        logger.info('Doppler chisq is better')
+        out2['pars'][0] = [dopout['teff'][0],dopout['logg'][0],dopout['feh'][0],dopout['vrel'][0],0.0]
 
+    # I'M NOT SURE THIS IS WORKING, VROT IS STAYING THE SAME
+    
     # Initialize allparams
     if allparams is None:
         allparams = {}
@@ -1013,14 +1066,38 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     logger.info(' ')
     logger.info('Step 3: Fitting stellar parameters, RV and broadening')
     allparams3 = allparams.copy()
-    fitparams3 = ['TEFF','LOGG','FE_H','ALPHA_H','RV','VROT']
+    fitparams3 = ['TEFF','LOGG','FE_H','ALPHA_H','RV']    
+    if allparams3['VROT']>0:
+        fitparams3.append('VROT')
     # Fit Vmicro as well if it's a dwarf
     if allparams3['LOGG']>3.8 or allparams3['TEFF']>8000:
-        fparams3.append('VMICRO')
+        fitparams3.append('VMICRO')
     logger.info('Fitting = '+', '.join(fitparams3))
         
     out3, model3 = fit_lsq(spec,allparams3,fitparams3,verbose=verbose,logger=logger)
 
+    # try giving x_step input to curve_fit, does that help??
+    # or try x_step='jac'    
+    # 79 nsynfev
+    # 12 njac, each jac call should have made 5 spectra, or 60 nsyn
+    # with x_scale='jac'
+    # 65 nsynfev, 9 njac
+    # using dx_lim
+    # 39 nsynfev, 6 njac
+
+    # with x_scale=[1000.0,0.1,0.1,0.1,10.0,5.0,1.0]
+    # 36 njac, lots of small steps in Teff, maybe teff scale too large
+    
+    # MAYBE TRY LMFIT INSTEAD OF CURVE_FIT??
+
+    # What if I make xtol/ftol/gtol global variables defined outside curve_fit
+    # and then set them to a high value in jac() when the solution has converged???
+
+    # check: reach(), inspect package, walking the stack, walking the python scope
+    # can use inspect to walk the stack
+
+    
+    
     #import pdb; pdb.set_trace()
     
     # Should we fit C_H and N_H as well??
@@ -1031,18 +1108,22 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     #out1['parerr'][0] = [9.97215673e+00, 1.62189664e-02, 5.99211701e-03, 7.79013094e-03, 2.96506687e-02]
     #out1['chisq'][0] = 8.28033419
     
-    
-    logger.info('Teff = %f' % out3['pars'][0][0])
-    logger.info('logg = %f' % out3['pars'][0][1])
-    logger.info('[Fe/H] = %f' % out3['pars'][0][2])
-    logger.info('[alpha/H] = %f' % out3['pars'][0][3])    
-    logger.info('RV = %f' % out3['pars'][0][4])
-    logger.info('Vsini = %f' % out3['pars'][0][5])
-    if 'VMICRO' in fitparams3:
-        logger.info('Vmicro = %f' % out3['pars'][0][6])        
+
+    for k,f in enumerate(fitparams3):
+        logger.info('%s = %f' % (f,out3['pars'][0][k]))
+    #logger.info('Teff = %f' % out3['pars'][0][0])
+    #logger.info('logg = %f' % out3['pars'][0][1])
+    #logger.info('[Fe/H] = %f' % out3['pars'][0][2])
+    #logger.info('[alpha/H] = %f' % out3['pars'][0][3])    
+    #logger.info('RV = %f' % out3['pars'][0][4])
+    #logger.info('Vsini = %f' % out3['pars'][0][5])
+    #if 'VMICRO' in fitparams3:
+    #    logger.info('Vmicro = %f' % out3['pars'][0][6])        
     logger.info('chisq = %f' % out3['chisq'][0])
+    logger.info('nfev = %i' % out3['nsynfev'][0])
     logger.info('dt = %f sec.' % (time.time()-t3))
     # typically 12-15 min.
+    # now ~9 min.
 
     
     # Tweak the continuum
@@ -1067,6 +1148,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
         elemcat = np.zeros(nelem,dtype=np.dtype([('name',np.str,10),('par',np.float64),('parerr',np.float64)]))
         elemcat['name'] = elem
         for k in range(nelem):
+            t4b = time.time()
             allparselem = allparams4.copy()
             if elem[k] in ['O','MG','SI','S','CA','TI']:
                 allparselem[elem[k]+'_H'] = allparams4['ALPHA_H']
@@ -1080,10 +1162,13 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
             elemcat['parerr'][k] = out4['parerr'][0]
             logger.info('%s = %f' % (fitparselem[0],elemcat['par'][k]))
             logger.info('chisq = %f' % out4['chisq'][0])
-            logger.info('dt = %f sec.' % (time.time()-t4))
+            logger.info('dt = %f sec.' % (time.time()-t4b))            
+        logger.info('dt = %f sec.' % (time.time()-t4))
     else:
         logger.info('No elements to fit')
-            
+
+    # about 50 min.
+        
     #elemcat['par'] =  [-0.141262,-0.083792,-0.356169,-0.449516,-0.412971,-0.061871,-0.191550,
     #                   -0.013700,-0.262991,-0.125668,-0.277579,-0.207205,-0.025872,-0.175383,
     #                   -0.142084,0.155856,-0.123922,-0.008116]
@@ -1110,8 +1195,8 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
         out5, model5 = fit_lsq(spec,allparams5,fitparams5,verbose=verbose,logger=logger)
         for k in range(len(fitparams5)):
             logger.info('%s = %f' % (fitparams5[k],out5['pars'][0][k]))
-            logger.info('chisq = %f' % out5['chisq'][0])
-            logger.info('dt = %f sec.' % (time.time()-t5))
+        logger.info('chisq = %f' % out5['chisq'][0])
+        logger.info('dt = %f sec.' % (time.time()-t5))
     else:
         out5 = out3
         model5 = model3
@@ -1125,9 +1210,23 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
     #    -3.22753633e-02,  1.62860666e-01, -1.95083709e-02,
     #    -9.50147946e-03,  2.96905740e-01, -2.96000000e+00,
     #    -8.11600000e-03]
+
+    # took 16306 sec, 4.5h
+    # 19 njac, 6014s, 1.7h
     
     #import pdb; pdb.set_trace()
 
+    # Final parameters
+    #[ 4.92539264e+03,  3.07141444e+00, -6.99312213e-02,
+    #     6.77962948e+00,  8.12015270e+00, -2.89556142e-01,
+    #     2.16399980e-01, -2.83437416e-02, -5.60581405e-01,
+    #    -2.33573194e-01,  4.98049632e-02, -5.42784235e-02,
+    #    -3.07015751e-02, -1.69868178e-01, -1.16887903e-01,
+    #    -1.62010075e-01, -1.56771272e-01, -2.12097321e-02,
+    #    -3.06320274e-01, -7.68461124e-02,  1.35509616e-01,
+    #    -2.99992776e+00, -2.99992815e+00]
+
+    
 
     # Make final structure and save the figure
     out = out5
@@ -1154,5 +1253,8 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False)
 
     if verbose:
         logger.info('dt = %f sec.' % (time.time()-t0))
+
+
+    import pdb; pdb.set_trace()
         
     return out, model
