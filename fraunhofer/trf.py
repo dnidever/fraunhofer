@@ -367,12 +367,8 @@ def trf_bounds(fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev,
 
             # Check dx_lim
             if dx_lim is not None:
-                print(dx_lim)
-                print(x-x_new)
-                print(np.abs(x-x_new)>dx_lim)
                 if np.sum(np.abs(x-x_new) > dx_lim)==0:
                      termination_status = 5
-                     print('terminating')
                      
             if termination_status is not None:
                 break

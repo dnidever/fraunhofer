@@ -971,13 +971,16 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=False,logger=None):
 
 
 
-def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False):
+def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False,logger=None):
     """ Fit a spectrum and determine the abundances."""
 
     t0 = time.time()
 
-    logger = dln.basiclogger()
-
+    if logger is None:
+        logger = dln.basiclogger()
+        logger.handlers[0].setFormatter(logging.Formatter("%(asctime)s [%(levelname)-5.5s]  %(message)s"))
+        logger.handlers[0].setStream(sys.stdout)  
+    
     # Default set of elements
     if elem is None:
         elem = ['C','N','O','NA','MG','AL','SI','K','CA','TI','V','CR','MN','CO','NI','CU','CE','ND']
