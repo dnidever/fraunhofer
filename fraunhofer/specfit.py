@@ -23,8 +23,8 @@ from astropy.coordinates import SkyCoord, EarthLocation
 from astropy.wcs import WCS
 from scipy.ndimage.filters import median_filter,gaussian_filter1d
 #from scipy.optimize import curve_fit, least_squares
-from minpack import curve_fit
-import least_squares
+from .minpack import curve_fit
+from .least_squares import least_squares
 from scipy.interpolate import interp1d
 import thecannon as tc
 from dlnpyutils import utils as dln, bindata, astro
@@ -41,8 +41,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.legend import Legend
 import tempfile
-#from . import models
-import models
+from . import models
 from synple import synple
 
 # Ignore these warnings, it's a bug
@@ -101,6 +100,7 @@ class SpecFitter:
         self._all_pars = []
         self._all_model = []
         self._all_chisq = []
+        self._jac_array = None
 
     @property
     def allparams(self):
@@ -284,7 +284,7 @@ class SpecFitter:
             f1 = pspec.flux.flatten()
 
             # Save models/pars/chisq
-            self._all_pars.append(pars.copy())
+            self._all_pars.append(list(pars).copy())
             self._all_model.append(f1.copy())
             self._all_chisq.append(self.chisq(f1))
             

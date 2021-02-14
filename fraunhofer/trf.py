@@ -102,7 +102,7 @@ from scipy.sparse.linalg import lsmr
 from scipy.optimize import OptimizeResult
 from scipy._lib.six import string_types
 
-from common import (
+from .common import (
     step_size_to_bound, find_active_constraints, in_bounds,
     make_strictly_feasible, intersect_trust_region, solve_lsq_trust_region,
     solve_trust_region_2d, minimize_quadratic_1d, build_quadratic_1d,

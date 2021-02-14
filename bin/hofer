@@ -11,6 +11,7 @@ from argparse import ArgumentParser
 from dlnpyutils import utils as dln
 import numpy as np
 import subprocess
+from fraunhofer import specfit
 
 # Main command-line program
 if __name__ == "__main__":
@@ -111,6 +112,7 @@ if __name__ == "__main__":
                 print('%s  S/N=%6.1f ' % (f,spec.snr))
 
         # Save the figure
+        figfile = None
         if (nfiles==1) & (inpfigfile!=''):
             figfile = inpfigfile
         if (inpfigfile=='') & (saveplot is True):
@@ -118,7 +120,7 @@ if __name__ == "__main__":
             figfile = base+'_fraunhofer.png'
             if outdir is not None: figfile = outdir+'/'+figfile
             if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile 
-
+            
         # HAVE A FLAG TO CALL FIT_SQL() DIRECTLY????
             
         # Run Fraunhofer

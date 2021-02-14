@@ -12,5 +12,5 @@ setup(name='Fraunhofer',
       packages=find_packages(exclude=["tests"]),
       scripts=['bin/hofer'],
       requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils','doppler'],
-      #include_package_data=True,
+      include_package_data=True,
 )

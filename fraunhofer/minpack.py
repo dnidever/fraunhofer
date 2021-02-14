@@ -15,9 +15,9 @@ from scipy.optimize.optimize import OptimizeResult, _check_unknown_options, Opti
 #from ._lsq import least_squares
 #from ._lsq.common import make_strictly_feasible
 #from ._lsq.least_squares import prepare_bounds
-from least_squares import least_squares
-from common import make_strictly_feasible
-from least_squares import prepare_bounds
+from .least_squares import least_squares
+from .common import make_strictly_feasible
+from .least_squares import prepare_bounds
 
 error = _minpack.error
 
