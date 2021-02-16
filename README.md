@@ -2,11 +2,6 @@
 Fraunhofer
 ==================
 
-#.. image:: https://circleci.com/gh/adrn/thejoker.svg?style=svg
-#        :target: https://circleci.com/gh/adrn/thejoker
-#.. image:: https://codecov.io/gh/adrn/thejoker/branch/main/graph/badge.svg
-#        :target: https://codecov.io/gh/adrn/thejoker
-
 A generirc stellar abundance determination software using Synspec.
 
 Authors
@@ -24,14 +19,6 @@ To install the latest stable release, use `pip`::
 To install the development version::
 
     pip install git+https://github.com/dnidever/fraunhofer
-
-#Attribution
-#-----------
-#
-#.. image:: https://img.shields.io/badge/ascl-1701.001-blue.svg?colorB=262255
-#        :target: http://ascl.net/1701.001
-#.. image:: https://zenodo.org/badge/67356932.svg
-#        :target: https://zenodo.org/badge/latestdoi/67356932
 
 Documentation
 -------------
