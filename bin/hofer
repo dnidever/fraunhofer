@@ -63,7 +63,7 @@ if __name__ == "__main__":
         elem = elem.split(',')
         elem = list(np.char.array(elem).upper())
         if elem[0]=='' or elem[0].lower()=='none':
-            elem = None
+            elem = []
     else:
         elem = None
     # Parameters to fit
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     for i,f in enumerate(files):
         # Check that the file exists
         if os.path.exists(f) is False:
-            print(f+' NOT FOUND')
+            logger.info(f+' NOT FOUND')
             continue
 
         # Load the spectrum
@@ -120,7 +120,7 @@ if __name__ == "__main__":
         
         if (verbose is True):
             if (nfiles>1):
-                if (i>0): print('')
+                if (i>0): logger.info('')
                 logger.info('Spectrum %3d:  %s  S/N=%6.1f ' % (i+1,f,spec.snr))
             else:
                 logger.info('%s  S/N=%6.1f ' % (f,spec.snr))
@@ -151,7 +151,7 @@ if __name__ == "__main__":
             if outdir is not None: outfile = outdir+'/'+outfile
             if (outdir is None) & (fdir != ''): outfile = fdir+'/'+outfile
         if verbose is True:
-            print('Writing output to '+outfile)
+            logger.info('Writing output to '+outfile)
         if os.path.exists(outfile): os.remove(outfile)
         Table(out).write(outfile)
         # append best model
