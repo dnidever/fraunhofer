@@ -62,6 +62,8 @@ if __name__ == "__main__":
     if elem != '':
         elem = elem.split(',')
         elem = list(np.char.array(elem).upper())
+        if elem[0]=='' or elem[0].lower()=='none':
+            elem = None
     else:
         elem = None
     # Parameters to fit
@@ -104,7 +106,7 @@ if __name__ == "__main__":
         raise ValueError('--figfile can only be used with a SINGLE input file')
 
     if (verbose is True) & (nfiles>1):
-        print('--- Running Fraunhofer Fit on %d spectra ---' % nfiles)
+        logger.info('--- Running Fraunhofer Fit on %d spectra ---' % nfiles)
 
     # Loop over the files
     for i,f in enumerate(files):
@@ -112,16 +114,16 @@ if __name__ == "__main__":
         if os.path.exists(f) is False:
             print(f+' NOT FOUND')
             continue
-        
+
         # Load the spectrum
         spec = doppler.read(f,format=reader)
         
         if (verbose is True):
             if (nfiles>1):
                 if (i>0): print('')
-                print('Spectrum %3d:  %s  S/N=%6.1f ' % (i+1,f,spec.snr))
+                logger.info('Spectrum %3d:  %s  S/N=%6.1f ' % (i+1,f,spec.snr))
             else:
-                print('%s  S/N=%6.1f ' % (f,spec.snr))
+                logger.info('%s  S/N=%6.1f ' % (f,spec.snr))
 
         # Save the figure
         figfile = None

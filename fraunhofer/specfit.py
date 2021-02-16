@@ -894,7 +894,8 @@ def dopvrot_lsq(spec,models=None,initpar=None,verbose=False,logger=None):
     
     if verbose is True:
         logger.info('Least Squares RV and stellar parameters:')
-        printpars(lspars)
+        for k,n in enumerate(['Teff','logg','[Fe/H]','RV','Vsini']):
+            logger.info('%s = %f' % (n,lspars[k]))
     lsmodel = spec_interp_vsini(spec.wave,teff=lspars[0],logg=lspars[1],feh=lspars[2],rv=lspars[3],vsini=lspars[4])
     lschisq = np.sqrt(np.sum(((spec.flux.flatten()-lsmodel)/spec.err.flatten())**2)/len(lsmodel))
     if verbose is True: logger.info('chisq = %5.2f' % lschisq)
