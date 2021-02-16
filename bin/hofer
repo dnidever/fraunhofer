@@ -20,30 +20,21 @@ from fraunhofer import specfit
 if __name__ == "__main__":
     parser = ArgumentParser(description='Run Fraunhofer fitting on spectra')
     parser.add_argument('files', type=str, nargs='+', help='Spectrum FITS files')
-    parser.add_argument('-f','--fpars', type=str, nargs=1, default='', help='List of parameteres to fit')
     parser.add_argument('-e','--elem', type=str, nargs=1, default='', help='List of elements to fit')    
+    parser.add_argument('-f','--fpars', type=str, nargs=1, default='', help='List of parameteres to fit')
     parser.add_argument('-i','--init', type=str, nargs=1, default='', help='Initial parameters to use')    
     parser.add_argument('--outfile', type=str, nargs=1, default='', help='Output filename')
     parser.add_argument('--figfile', type=str, nargs=1, default='', help='Figure filename')
     parser.add_argument('-d','--outdir', type=str, nargs=1, default='', help='Output directory')        
     parser.add_argument('-l','--list', type=str, nargs=1, default='', help='Input list of FITS files')
     parser.add_argument('-p','--plot', action='store_true', help='Save the plots')
+    parser.add_argument('--vmicro', action='store_true', help='Fit vmicro')
+    parser.add_argument('--vsini', action='store_true', help='Fit vsini')    
     parser.add_argument('-r','--reader', type=str, nargs=1, default='', help='The spectral reader to use')
-    parser.add_argument('-v','--verbose', type=str, nargs='?', default=None, const='1', help='Verbose output')
-    #parser.add_argument('-v','--verbose', action='store_true', help='Verbose output')    
+    parser.add_argument('-v','--verbose', type=int, nargs='?', default=0, const=1, help='Verbosity level (0, 1, 2)')
 
     args = parser.parse_args()
 
-    # Set up the logger
-    logger = dln.basiclogger()
-    logger.handlers[0].setFormatter(logging.Formatter("%(asctime)s [%(levelname)-5.5s]  %(message)s"))
-    logger.handlers[0].setStream(sys.stdout)   
-
-    now = datetime.datetime.now()
-    start = time.time()
-    logger.info("Start: "+now.strftime("%Y-%m-%d %H:%M:%S"))
-    logger.info(" ")
-    
     # Get input parameters
     t0 = time.time()
     files = args.files
@@ -56,6 +47,8 @@ if __name__ == "__main__":
     if reader == '': reader = None
     saveplot = args.plot
     inlist = dln.first_el(args.list)
+    fitvmicro = args.vmicro
+    fitvsini = args.vsini    
     # Elements to fit
     elem = dln.first_el(args.elem)
     if elem != '':
@@ -88,6 +81,17 @@ if __name__ == "__main__":
     else:
         allparams = None
 
+    # Set up the logger
+    logger = dln.basiclogger()
+    logger.handlers[0].setFormatter(logging.Formatter("%(asctime)s [%(levelname)-5.5s]  %(message)s"))
+    logger.handlers[0].setStream(sys.stdout)
+    
+    now = datetime.datetime.now()
+    start = time.time()
+    if verbose>0:
+        logger.info("Start: "+now.strftime("%Y-%m-%d %H:%M:%S"))
+        logger.info(" ")
+        
         
     # Load files from a list
     if (len(files)==0) & (inlist!=''):
@@ -104,7 +108,7 @@ if __name__ == "__main__":
     if (inpfigfile!='') & (nfiles>1):
         raise ValueError('--figfile can only be used with a SINGLE input file')
 
-    if (verbose is not None) & (nfiles>1):
+    if (verbose>0) & (nfiles>1):
         logger.info('--- Running Fraunhofer Fit on %d spectra ---' % nfiles)
 
     # Loop over the files
@@ -117,7 +121,7 @@ if __name__ == "__main__":
         # Load the spectrum
         spec = doppler.read(f,format=reader)
         
-        if (verbose is not None):
+        if (verbose>0):
             if (nfiles>1):
                 if (i>0): logger.info('')
                 logger.info('Spectrum %3d:  %s  S/N=%6.1f ' % (i+1,f,spec.snr))
@@ -135,12 +139,19 @@ if __name__ == "__main__":
             if outdir is not None: figfile = outdir+'/'+figfile
             if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile 
             
-        # HAVE A FLAG TO CALL FIT_SQL() DIRECTLY????
+        # HAVE A FLAG TO CALL FIT_LSQ() DIRECTLY????
         
         # Run Fraunhofer
-        out, model = specfit.fit(spec,allparams=allparams,fitparams=fpars,
-                                 elem=elem,figfile=figfile,verbose=verbose,
-                                 logger=logger)
+        if fpars is None:
+            out, model = specfit.fit(spec,allparams=allparams,fitparams=fpars,
+                                     elem=elem,fitvmicro=fitvmicro,fitvsini=fitvsini,
+                                     figfile=figfile,verbose=verbose,
+                                     logger=logger)
+
+        # Run fit_lsq() directly
+        else:
+            out, model = specfit.fit_lsq(spec,allparams,fitparams=fpars,
+                                         verbose=verbose,logger=logger)            
             
         # Save the output
         if inpoutfile!='':
@@ -150,7 +161,7 @@ if __name__ == "__main__":
             outfile = base+'_fraunhofer.fits'
             if outdir is not None: outfile = outdir+'/'+outfile
             if (outdir is None) & (fdir != ''): outfile = fdir+'/'+outfile
-        if verbose is not None:
+        if verbose>0:
             logger.info('Writing output to '+outfile)
         if os.path.exists(outfile): os.remove(outfile)
         Table(out).write(outfile)
@@ -162,7 +173,8 @@ if __name__ == "__main__":
         hdulist.close()
 
     now = datetime.datetime.now()
-    logger.info(" ")
-    logger.info("End: "+now.strftime("%Y-%m-%d %H:%M:%S"))
-    logger.info("elapsed: %0.1f sec." % (time.time()-start))
+    if verbose>0:
+        logger.info(" ")
+        logger.info("End: "+now.strftime("%Y-%m-%d %H:%M:%S"))
+        logger.info("elapsed: %0.1f sec." % (time.time()-start))
         
