@@ -188,7 +188,7 @@ class SpecFitter:
             logger.info(' ')
             logger.info('##### Calculating Jacobian Matrix #####')
             logger.info(' ')
-        
+            
         # A new synthetic spectrum does not need to be generated RV, vmicro or vsini.
         # Some time can be saved by not remaking those.
         # Use a one-sided derivative.
@@ -429,6 +429,7 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp'):
     metal = inputs['FE_H']
 
     tid,modelfile = tempfile.mkstemp(prefix="mod",dir=".")
+    os.close(tid)  # close the open file
     # Limit values
     #  of course the logg/feh ranges vary with Teff
     mteff = dln.limit(teff,3500.0,60000.0)
@@ -975,7 +976,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False,
     """ Fit a spectrum and determine the abundances."""
 
     t0 = time.time()
-
+    
     if logger is None:
         logger = dln.basiclogger()
         logger.handlers[0].setFormatter(logging.Formatter("%(asctime)s [%(levelname)-5.5s]  %(message)s"))
@@ -1061,7 +1062,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False,
 
         
     #import pdb; pdb.set_trace()
-        
+
     
     # 3) Fit stellar parameters (Teff, logg, feh, alpha, RV, Vsini)
     #--------------------------------------------------------------
@@ -1257,7 +1258,5 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False,
     if verbose:
         logger.info('dt = %f sec.' % (time.time()-t0))
 
-
-    import pdb; pdb.set_trace()
         
     return out, model

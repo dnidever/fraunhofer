@@ -43,6 +43,7 @@ if __name__ == "__main__":
     now = datetime.datetime.now()
     start = time.time()
     logger.info("Start: "+now.strftime("%Y-%m-%d %H:%M:%S"))
+    logger.info(" ")
     
     
     t0 = time.time()
@@ -104,17 +105,17 @@ if __name__ == "__main__":
 
     if (verbose is True) & (nfiles>1):
         print('--- Running Fraunhofer Fit on %d spectra ---' % nfiles)
-        
+
     # Loop over the files
     for i,f in enumerate(files):
         # Check that the file exists
         if os.path.exists(f) is False:
             print(f+' NOT FOUND')
             continue
-
+        
         # Load the spectrum
         spec = doppler.read(f,format=reader)
-    
+        
         if (verbose is True):
             if (nfiles>1):
                 if (i>0): print('')
@@ -133,7 +134,7 @@ if __name__ == "__main__":
             if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile 
             
         # HAVE A FLAG TO CALL FIT_SQL() DIRECTLY????
-            
+        
         # Run Fraunhofer
         out, model = specfit.fit(spec,allparams=allparams,fitparams=fpars,
                                  elem=elem,figfile=figfile,verbose=verbose,
@@ -159,6 +160,7 @@ if __name__ == "__main__":
         hdulist.close()
 
     now = datetime.datetime.now()
+    logger.info(" ")
     logger.info("End: "+now.strftime("%Y-%m-%d %H:%M:%S"))
     logger.info("elapsed: %0.1f sec." % (time.time()-start))
         
