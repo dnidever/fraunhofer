@@ -19,7 +19,7 @@ from fraunhofer import specfit
 # Main command-line program
 if __name__ == "__main__":
     parser = ArgumentParser(description='Run Fraunhofer fitting on spectra')
-    parser.add_argument('files', type=str, nargs='*', help='Spectrum FITS files')
+    parser.add_argument('files', type=str, nargs='+', help='Spectrum FITS files')
     parser.add_argument('-f','--fpars', type=str, nargs=1, default='', help='List of parameteres to fit')
     parser.add_argument('-e','--elem', type=str, nargs=1, default='', help='List of elements to fit')    
     parser.add_argument('-i','--init', type=str, nargs=1, default='', help='Initial parameters to use')    
@@ -29,13 +29,12 @@ if __name__ == "__main__":
     parser.add_argument('-l','--list', type=str, nargs=1, default='', help='Input list of FITS files')
     parser.add_argument('-p','--plot', action='store_true', help='Save the plots')
     parser.add_argument('-r','--reader', type=str, nargs=1, default='', help='The spectral reader to use')
-    parser.add_argument('-v','--verbose', action='store_true', help='Verbose output')
+    parser.add_argument('-v','--verbose', type=str, nargs='?', default=None, const='1', help='Verbose output')
+    #parser.add_argument('-v','--verbose', action='store_true', help='Verbose output')    
 
     args = parser.parse_args()
 
-    # input elements to fit
-    # input init guesses for parameters
-
+    # Set up the logger
     logger = dln.basiclogger()
     logger.handlers[0].setFormatter(logging.Formatter("%(asctime)s [%(levelname)-5.5s]  %(message)s"))
     logger.handlers[0].setStream(sys.stdout)   
@@ -45,7 +44,7 @@ if __name__ == "__main__":
     logger.info("Start: "+now.strftime("%Y-%m-%d %H:%M:%S"))
     logger.info(" ")
     
-    
+    # Get input parameters
     t0 = time.time()
     files = args.files
     inpoutfile = dln.first_el(args.outfile)
@@ -105,7 +104,7 @@ if __name__ == "__main__":
     if (inpfigfile!='') & (nfiles>1):
         raise ValueError('--figfile can only be used with a SINGLE input file')
 
-    if (verbose is True) & (nfiles>1):
+    if (verbose is not None) & (nfiles>1):
         logger.info('--- Running Fraunhofer Fit on %d spectra ---' % nfiles)
 
     # Loop over the files
@@ -118,12 +117,13 @@ if __name__ == "__main__":
         # Load the spectrum
         spec = doppler.read(f,format=reader)
         
-        if (verbose is True):
+        if (verbose is not None):
             if (nfiles>1):
                 if (i>0): logger.info('')
                 logger.info('Spectrum %3d:  %s  S/N=%6.1f ' % (i+1,f,spec.snr))
             else:
                 logger.info('%s  S/N=%6.1f ' % (f,spec.snr))
+            logger.info(' ')
 
         # Save the figure
         figfile = None
@@ -150,7 +150,7 @@ if __name__ == "__main__":
             outfile = base+'_fraunhofer.fits'
             if outdir is not None: outfile = outdir+'/'+outfile
             if (outdir is None) & (fdir != ''): outfile = fdir+'/'+outfile
-        if verbose is True:
+        if verbose is not None:
             logger.info('Writing output to '+outfile)
         if os.path.exists(outfile): os.remove(outfile)
         Table(out).write(outfile)

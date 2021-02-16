@@ -973,10 +973,16 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=False,logger=None):
 
 
 
-def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False,logger=None):
+def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=None,logger=None):
     """ Fit a spectrum and determine the abundances."""
 
     t0 = time.time()
+
+    # Verbose level
+    verbosity = False   # verbose at 2nd level
+    if verbose is not None:
+        if int(verbose)==2:
+            verbosity = True
     
     if logger is None:
         logger = dln.basiclogger()
@@ -1012,7 +1018,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False,
     logger.info(' ')    
     logger.info('Step 2: Fitting vsini with Doppler model')
     initpar2 = [dopout['teff'][0], dopout['logg'][0], dopout['feh'][0], dopout['vrel'][0], 2.0]
-    out2, model2 = dopvrot_lsq(spec,initpar=initpar2,verbose=verbose,logger=logger)
+    out2, model2 = dopvrot_lsq(spec,initpar=initpar2,verbose=verbosity,logger=logger)
     logger.info('Teff = %f' % out2['pars'][0][0])
     logger.info('logg = %f' % out2['pars'][0][1])
     logger.info('[Fe/H] = %f' % out2['pars'][0][2])
@@ -1079,7 +1085,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False,
         fitparams3.append('VMICRO')
     logger.info('Fitting = '+', '.join(fitparams3))
         
-    out3, model3 = fit_lsq(spec,allparams3,fitparams3,verbose=verbose,logger=logger)
+    out3, model3 = fit_lsq(spec,allparams3,fitparams3,verbose=verbosity,logger=logger)
 
     # try giving x_step input to curve_fit, does that help??
     # or try x_step='jac'    
@@ -1132,7 +1138,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False,
 
     
     # Tweak the continuum
-    if verbose:
+    if verbose is not None:
         logger.info('Tweaking continuum using best-fit synthetic model')
     tmodel = Spec1D(model3,wave=spec.wave.copy(),lsfpars=np.array(0.0))        
     spec = doppler.rv.tweakcontinuum(spec,tmodel)
@@ -1162,7 +1168,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False,
             fitparselem = [elem[k]+'_H']
 
             logger.info('Fitting '+fitparselem[0])
-            out4, model4 = fit_lsq(spec,allparselem,fitparselem,verbose=verbose,logger=logger)
+            out4, model4 = fit_lsq(spec,allparselem,fitparselem,verbose=verbosity,logger=logger)
             elemcat['par'][k] = out4['pars'][0]
             elemcat['parerr'][k] = out4['parerr'][0]
             logger.info('%s = %f' % (fitparselem[0],elemcat['par'][k]))
@@ -1197,7 +1203,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False,
             fitparams5.append('VMICRO')
         fitparams5 = fitparams5+list(np.char.array(elem)+'_H')
         logger.info('Fitting = '+', '.join(fitparams5))
-        out5, model5 = fit_lsq(spec,allparams5,fitparams5,verbose=verbose,logger=logger)
+        out5, model5 = fit_lsq(spec,allparams5,fitparams5,verbose=verbosity,logger=logger)
         for k in range(len(fitparams5)):
             logger.info('%s = %f' % (fitparams5[k],out5['pars'][0][k]))
         logger.info('chisq = %f' % out5['chisq'][0])
@@ -1254,9 +1260,9 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,verbose=False,
     model.lsf = spec.lsf.copy()
     # Make figure
     if figfile is not None:
-        specfigure(figfile,spec,model,out,verbose=verbose)
+        specfigure(figfile,spec,model,out,verbose=verbosity)
 
-    if verbose:
+    if verbose is not None:
         logger.info('dt = %f sec.' % (time.time()-t0))
 
         
