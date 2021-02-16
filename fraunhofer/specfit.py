@@ -1148,12 +1148,6 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,fitvsini=False
     for k,name in enumerate(['TEFF','LOGG','FE_H','RV','VROT']):
         if allparams.get(name) is None:
             allparams[name] = out2['pars'][0][k]
-            
-    #allparams['TEFF'] = out2['pars'][0][0]
-    #allparams['LOGG'] = out2['pars'][0][1]
-    #allparams['FE_H'] = out2['pars'][0][2]
-    #allparams['RV'] = out2['pars'][0][3]
-    #allparams['VROT'] = out2['pars'][0][4]
 
 
     # Get Vmicro using Teff/logg relation
