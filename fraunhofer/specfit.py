@@ -1182,11 +1182,9 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
     if params3['LOGG']>3.8 or params3['TEFF']>8000 or fitvmicro is True:
         fitparams3.append('VMICRO')
     out3, model3 = fit_lsq(spec,params3,fitparams3,verbose=verbose,logger=logger)
-
+    # typically 9 min.
+    
     # Should we fit C_H and N_H as well??
-
-    # typically 12-15 min.
-    # now ~9 min.
 
     
     # Tweak the continuum
@@ -1277,7 +1275,7 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
     model.lsf = spec.lsf.copy()
     # Make figure
     if figfile is not None:
-        specfigure(figfile,spec,model,out,verbose=verbosity)
+        specfigure(figfile,spec,model,out,verbose=(verbose>=2))
 
     if verbose>0:
         logger.info('dt = %f sec.' % (time.time()-t0))
