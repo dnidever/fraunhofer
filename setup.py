@@ -11,6 +11,7 @@ setup(name='Fraunhofer',
       url='https://github.com/dnidever/fraunhofer',
       packages=find_packages(exclude=["tests"]),
       scripts=['bin/hofer'],
-      requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils','doppler','synple'],
+      requires=['numpy','astropy(>=4.0)','scipy'],
+      #requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils','doppler','synple'],
       include_package_data=True,
 )
