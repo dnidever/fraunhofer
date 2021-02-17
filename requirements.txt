@@ -2,6 +2,3 @@ numpy
 matplotlib
 astropy
 scipy
-dlnpyutils
-doppler
-synple
