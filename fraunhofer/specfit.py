@@ -137,7 +137,7 @@ class SpecFitter:
         synspec = model_spectrum(inputs,verbose=self.verbose)   # always returns air wavelengths
         self.nsynfev += 1
         # Convolve with the LSF and do air/vacuum wave conversion
-        pspec = prepare_synthspec(synspec,self.lsf)
+        pspec = prepare_synthspec(synspec,self.lsf,norm=self.norm)
         # Save models/pars/chisq
         self._all_pars.append(list(args).copy())
         self._all_model.append(pspec.flux.flatten().copy())
@@ -218,7 +218,7 @@ class SpecFitter:
         # Trim to final wavelengths
         smorigspec = trim_spectrum(smorigspec,w0,w1)
         # Convolve with the LSF and do air/vacuum wave conversion
-        pspec = prepare_synthspec(smorigspec,self.lsf)
+        pspec = prepare_synthspec(smorigspec,self.lsf,norm=self.norm)
         # Flatten the spectrum
         f0 = pspec.flux.flatten()
         # Save models/pars/chisq
@@ -269,7 +269,7 @@ class SpecFitter:
                 synspec.wave = astro.airtovac(synspec.wave)
                 synspec.wavevac = True
             # Convolve with the LSF and do air/vacuum wave conversion
-            pspec = prepare_synthspec(synspec,self.lsf)
+            pspec = prepare_synthspec(synspec,self.lsf,norm=self.norm)
             # Flatten the spectrum
             f1 = pspec.flux.flatten()
 
@@ -545,7 +545,7 @@ def model_spectrum(inputs,verbose=False,keepextend=False):
     # Get final wavelength array
     wv1, ind1 = dln.closest(wave1,w0)
     wv2, ind2 = dln.closest(wave1,w1)
-    synspec = Spec1D(flux1/cont1,wave=wave1,lsfpars=np.array(0.0))
+    synspec = Spec1D(flux1/cont1,err=flux1*0,wave=wave1,lsfpars=np.array(0.0))
     synspec.cont = cont1
     synspec.wavevac = False
     # Smooth and shift
@@ -558,7 +558,7 @@ def model_spectrum(inputs,verbose=False,keepextend=False):
     return synspec
 
 
-def prepare_synthspec(synspec,lsf):
+def prepare_synthspec(synspec,lsf,norm=True):
     """ Prepare a synthetic spectrum to be compared to an observed spectrum."""
     # Convolve with LSF and do air<->vacuum wavelength conversion
     
@@ -575,7 +575,8 @@ def prepare_synthspec(synspec,lsf):
         
     # Initialize the output spectrum
     npix,norder = lsf.wave.shape
-    pspec = Spec1D(np.zeros((npix,norder),np.float32),wave=lsf.wave,lsfpars=lsf.pars,lsftype=lsf.lsftype,lsfxtype=lsf.xtype)
+    pspec = Spec1D(np.zeros((npix,norder),np.float32),err=np.zeros((npix,norder),np.float32),
+                   wave=lsf.wave,lsfpars=lsf.pars,lsftype=lsf.lsftype,lsfxtype=lsf.xtype)
     pspec.cont = np.zeros((npix,norder),np.float32)
         
     # Loop over orders
@@ -620,6 +621,10 @@ def prepare_synthspec(synspec,lsf):
         pspec.flux[:,o] = flux
         pspec.cont[:,o] = cont        
 
+    # Normalize
+    if norm is True:
+        pspec.normalize()
+        
     return pspec
 
 
@@ -870,14 +875,43 @@ def dopvrot_lsq(spec,models=None,initpar=None,verbose=False,logger=None):
         if spec.norder>1:
             smflux = spec.flux*0
             for k in range(spec.norder):
-                smflux[:,k] = utils.broaden(m.wave[:,k],m.flux[:,k],vsini=vsini)            
+                smflux[:,k] = utils.broaden(m.wave[:,k],m.flux[:,k],vsini=vsini)
         else:
             smflux = utils.broaden(m.wave.flatten(),m.flux.flatten(),vsini=vsini)
         return smflux.flatten()
+
+               
+    def spec_interp_vsini_jac(x,*args):
+        """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
+        is the partial derivative of f[i] with respect to x[j]). """
+        
+        relstep = 0.02
+        npix = len(x)
+        npar = len(args)
+
+        # Current values
+        f0 = spec_interp_vsini(x,*args)
+
+        # Initialize jacobian matrix
+        jac = np.zeros((npix,npar),np.float64)
+        
+        # Loop over parameters
+        for i in range(npar):
+            pars = np.array(copy.deepcopy(args))
+            step = relstep*pars[i]
+            if step<=0.0:
+                step = 0.02
+            pars[i] += step
+            f1 = spec_interp_vsini(x,*pars)
+
+            jac[:,i] = (f1-f0)/step
+            
+        return jac
+
     
     # Use curve_fit
     lspars, lscov = curve_fit(spec_interp_vsini, spec.wave.flatten(), spec.flux.flatten(), sigma=spec.err.flatten(),
-                              p0=initpar, bounds=bounds)
+                              p0=initpar, bounds=bounds, jac=spec_interp_vsini_jac)
     # If it hits a boundary then the solution won't change much compared to initpar
     # setting absolute_sigma=True gives crazy low lsperror values
     lsperror = np.sqrt(np.diag(lscov))
@@ -963,6 +997,7 @@ def fit_lsq(spec,params,fitparams=None,verbose=0,logger=None):
     # Initialize the fitter
     spfitter = SpecFitter(spec,params,fitparams=fitparams,verbose=(verbose>=2))
     spfitter.logger = logger
+    spfitter.norm = True  # normalize the synthetic spectrum
     pinit = initpars(params,fitparams)
     bounds = mkbounds(fitparams)
 
@@ -978,13 +1013,13 @@ def fit_lsq(spec,params,fitparams=None,verbose=0,logger=None):
     if verbose>0:
         logger.info('Best values:')
         for k in range(npar):
-            logger.info('%s = %f' % (fitparams[k],pars[k]))
+            logger.info('%s = %.3f +/- %.3f' % (fitparams[k],pars[k],error[k]))
     model = spfitter.model(spfitter.wave,*pars)
     chisq = np.sqrt(np.sum(((spfitter.flux-model)/spfitter.err)**2)/len(model))
     if verbose>0:
-        logger.info('chisq = %5.2f' % chisq)
+        logger.info('chisq = %.2f' % chisq)
         logger.info('nfev = %i' % spfitter.nsynfev)
-        logger.info('dt = %f sec.' % (time.time()-t0))
+        logger.info('dt = %.2f sec.' % (time.time()-t0))
         
     # Put it into the output structure
     dtyp = []
@@ -1105,12 +1140,12 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
     # Use Doppler to get initial guess of stellar parameters and RV
     dopout, dopfmodel, dopspecm = doppler.fit(spec)
     if verbose>0:
-        logger.info('Teff = %f' % dopout['teff'][0])
-        logger.info('logg = %f' % dopout['logg'][0])
-        logger.info('[Fe/H] = %f' % dopout['feh'][0])
-        logger.info('Vrel = %f' % dopout['vrel'][0])
-        logger.info('chisq = %f' % dopout['chisq'][0])
-        logger.info('dt = %f sec.' % (time.time()-t1))
+        logger.info('Teff = %.2f +/- %.2f' % (dopout['teff'][0],dopout['tefferr'][0]))
+        logger.info('logg = %.3f +/- %.3f' % (dopout['logg'][0],dopout['loggerr'][0]))
+        logger.info('[Fe/H] = %.3f +/- %.3f' % (dopout['feh'][0],dopout['feherr'][0]))
+        logger.info('Vrel = %.4f +/- %.4f' % (dopout['vrel'][0],dopout['vrelerr'][0]))
+        logger.info('chisq = %.3f' % dopout['chisq'][0])
+        logger.info('dt = %.2f sec.' % (time.time()-t1))
         # typically 5 sec
     
 
@@ -1120,23 +1155,22 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
     if verbose>0:
         logger.info(' ')    
         logger.info('Step 2: Fitting vsini with Doppler model')
-    initpar2 = [dopout['teff'][0], dopout['logg'][0], dopout['feh'][0], dopout['vrel'][0], 2.0]
+    # For APOGEE resolution you need vsini~4 km/s or greater to see an effect
+    initpar2 = [dopout['teff'][0], dopout['logg'][0], dopout['feh'][0], dopout['vrel'][0], 5.0]
     out2, model2 = dopvrot_lsq(spec,initpar=initpar2,verbose=verbose,logger=logger)
     if verbose>0:
-        logger.info('Teff = %f' % out2['pars'][0][0])
-        logger.info('logg = %f' % out2['pars'][0][1])
-        logger.info('[Fe/H] = %f' % out2['pars'][0][2])
-        logger.info('Vrel = %f' % out2['pars'][0][3])
-        logger.info('Vsini = %f' % out2['pars'][0][4])
-        logger.info('chisq = %f' % out2['chisq'][0])
-        logger.info('dt = %f sec.' % (time.time()-t2))
+        logger.info('Teff = %.2f +/- %.2f' % (out2['pars'][0][0],out2['parerr'][0][0]))
+        logger.info('logg = %.3f +/- %.3f' % (out2['pars'][0][1],out2['parerr'][0][1]))
+        logger.info('[Fe/H] = %.3f +/- %.3f' % (out2['pars'][0][2],out2['parerr'][0][2]))
+        logger.info('Vrel = %.4f +/- %.4f' % (out2['pars'][0][3],out2['parerr'][0][3]))
+        logger.info('Vsini = %.3f +/- %.3f' % (out2['pars'][0][4],out2['parerr'][0][4]))
+        logger.info('chisq = %.3f' % out2['chisq'][0])
+        logger.info('dt = %.2f sec.' % (time.time()-t2))
         # typically 5 sec
     if out2['chisq'][0] > dopout['chisq'][0]:
         if verbose>0:
             logger.info('Doppler Vrot=0 chisq is better')
         out2['pars'][0] = [dopout['teff'][0],dopout['logg'][0],dopout['feh'][0],dopout['vrel'][0],0.0]
-
-    # I'M NOT SURE THIS IS WORKING, VROT IS STAYING THE SAME
 
     
     # Initialize params
@@ -1260,7 +1294,7 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
     npar = len(fitparams5)
     for f in fitparams5:
         dtyp += [(f,float),(f+'_ERR',float)]
-    dtyp += [('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),('chisq',float)]
+    dtyp += [('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),('chisq',float),('vhelio',float)]
     dtype = np.dtype(dtyp)
     out = np.zeros(1,dtype=dtype)
     for k,f in enumerate(fitparams5):
@@ -1270,6 +1304,9 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
     out['parerr'] = out5['parerr'][0]
     out['parcov'] = out5['parcov'][0]
     out['chisq'] = out5['chisq'][0]
+    out['vhelio'] = out5['RV']+spec.barycorr()
+    if verbose>0:
+        logger.info('Vhelio = %.3f' % out['vhelio'])
     # Final model
     model = Spec1D(model5,wave=spec.wave.copy(),lsfpars=np.array(0.0))
     model.lsf = spec.lsf.copy()
@@ -1278,7 +1315,7 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
         specfigure(figfile,spec,model,out,verbose=(verbose>=2))
 
     if verbose>0:
-        logger.info('dt = %f sec.' % (time.time()-t0))
+        logger.info('dt = %.2f sec.' % (time.time()-t0))
 
         
     return out, model
