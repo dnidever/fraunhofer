@@ -12,11 +12,7 @@ Authors
 Installation
 ------------
 
-To install the latest stable release, use `pip`::
-
-    pip install fraunhofer
-
-To install the development version::
+To install the latest version::
 
     pip install git+https://github.com/dnidever/fraunhofer
 
