@@ -69,7 +69,7 @@ if __name__ == "__main__":
     init = dln.first_el(args.init)
     if init != '':
         init = init.split(',')
-        allparams = {}
+        params = {}
         for k,init1 in enumerate(init):
             if init1.find(':') != -1:
                 arr = init1.split(':')
@@ -77,9 +77,9 @@ if __name__ == "__main__":
                 arr = init1.split('=')
             else:
                 raise ValueError('Use format key=value or key:value')
-            allparams[str(arr[0]).upper()] = float(arr[1])
+            params[str(arr[0]).upper()] = float(arr[1])
     else:
-        allparams = None
+        params = None
 
     # Set up the logger
     logger = dln.basiclogger()
@@ -143,14 +143,14 @@ if __name__ == "__main__":
         
         # Run Fraunhofer
         if fpars is None:
-            out, model = specfit.fit(spec,allparams=allparams,fitparams=fpars,
-                                     elem=elem,fitvmicro=fitvmicro,fitvsini=fitvsini,
+            out, model = specfit.fit(spec,params=params,elem=elem,
+                                     fitvmicro=fitvmicro,fitvsini=fitvsini,
                                      figfile=figfile,verbose=verbose,
                                      logger=logger)
 
         # Run fit_lsq() directly
         else:
-            out, model = specfit.fit_lsq(spec,allparams,fitparams=fpars,
+            out, model = specfit.fit_lsq(spec,params,fitparams=fpars,
                                          verbose=verbose,logger=logger)            
             
         # Save the output
