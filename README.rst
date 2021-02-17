@@ -2,7 +2,7 @@
 Fraunhofer
 ==================
 
-A generirc stellar abundance determination software using Synspec.
+A generic stellar abundance determination software using Synspec.
 
 Authors
 -------

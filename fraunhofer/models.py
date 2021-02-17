@@ -204,7 +204,7 @@ def mkmodel(teff,logg,metal,outfile=None,ntau=None,mtype='odfnew'):
         avail = Table.read(modeldir()+'tefflogg.txt',format='ascii')
         avail['col1'].name = 'teff'
         avail['col2'].name = 'logg'
-        v1,nv1 = dln.where(abs(avail['teff']-teff) < 0.1 and abs(avail['logg']-logg) <= 0.001)
+        v1,nv1 = dln.where((np.abs(avail['teff']-teff) < 0.1) & (np.abs(avail['logg']-logg) <= 0.001))
         v2 = v1
         v3,nv3 = dln.where(abs(availmetal-metal) <= 0.001)
     else:

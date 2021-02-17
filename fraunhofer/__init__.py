@@ -1,1 +1,2 @@
-__all__ = ["specfit","models","minpack","least_squares","tfr"]
+__all__ = ["specfit","models"]
+__version__ = '1.0.0'

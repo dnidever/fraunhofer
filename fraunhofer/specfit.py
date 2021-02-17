@@ -902,7 +902,7 @@ def dopvrot_lsq(spec,models=None,initpar=None,verbose=False,logger=None):
     return out, lsmodel
 
 
-def fit_lsq(spec,allparams,fitparams=None,verbose=0,logger=None):
+def fit_lsq(spec,params,fitparams=None,verbose=0,logger=None):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
     abundances using least-squares.
@@ -911,11 +911,11 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=0,logger=None):
     ----------
     spec : Spec1D object
          The observed spectrum to match.
-    allparams : dict
+    params : dict
          Dictionary of initial values to use or parameters/elements to hold fixed.
     fitparams : list, optional
          List of parameter names to fit (e.g., TEFF, LOGG, FE_H, RV).  By default all values
-         in ALLPARAMS are fit.
+         in PARAMS are fit.
     verbose : int, optional
          Verbosity level (0, 1, or 2).  The default is 0 and verbose=2 is for debugging.
     logger : logging object, optional
@@ -934,7 +934,7 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=0,logger=None):
     .. code-block:: python
 
          spec = doppler.read(file)
-         allparams = {'teff':5500,'logg':3.0,'fe_h':-1.0,'rv':0.0,'ca_h':-1.0}
+         params = {'teff':5500,'logg':3.0,'fe_h':-1.0,'rv':0.0,'ca_h':-1.0}
          fitparams = ['teff','logg','fe_h','rv','ca_h']
          out,model = specfit.fit_lsq(spec,allparams,fitparams=fitparams)
 
@@ -952,18 +952,18 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=0,logger=None):
     
     # Capitalize the inputs
     # Make key names all CAPS
-    allparams = dict((key.upper(), value) for (key, value) in allparams.items())
+    params = dict((key.upper(), value) for (key, value) in params.items())
 
     # Fitting parameters
     if fitparams is None:
-        fitparams = list(allparams.keys())
+        fitparams = list(params.keys())
     fitparams = [v.upper() for v in fitparams]  # all CAPS
     npar = len(fitparams)
     
     # Initialize the fitter
-    spfitter = SpecFitter(spec,allparams,fitparams=fitparams,verbose=(verbose>=2))
+    spfitter = SpecFitter(spec,params,fitparams=fitparams,verbose=(verbose>=2))
     spfitter.logger = logger
-    pinit = initpars(allparams,fitparams)
+    pinit = initpars(params,fitparams)
     bounds = mkbounds(fitparams)
 
     if verbose>0:
@@ -1009,7 +1009,7 @@ def fit_lsq(spec,allparams,fitparams=None,verbose=0,logger=None):
 
 
 
-def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
+def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
         verbose=None,logger=None):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
@@ -1025,7 +1025,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,fitvsini=False
     ----------
     spec : Spec1D object
          The observed spectrum to match.
-    allparams : dict, optional
+    params : dict, optional
          Dictionary of initial values to use or parameters/elements to hold fixed.
     elem : list, optional
          List of elements to fit.  The default is:
@@ -1037,7 +1037,7 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,fitvsini=False
          Fit rotational velocity (vsini).  By default, Vsini will be fit initially with a Doppler
            model, but only included in the final fit if it improved chisq.
     fitvmicro : bool, optional
-         Fit Vmicro.  Default is False.  By default, Vmicro is set (if not included in ALLPARAMS)
+         Fit Vmicro.  Default is False.  By default, Vmicro is set (if not included in PARAMS)
          logg>=3.8:  vmicro = 2.0
          logg<3.8:   vmicro = 10^(0.226−0.0228*logg+0.0297*(logg)^2−0.0113*(logg)^3 )
     verbose : int, optional
@@ -1080,12 +1080,12 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,fitvsini=False
     # Print out inputs
     if verbose>0:
         logger.info('Inputs:')
-        if allparams is not None:
-            logger.info('ALLPARAMS:')
-            for k,n in enumerate(allparams.keys()):
-                logger.info('%s = %f' % (n,allparams[n]))
+        if params is not None:
+            logger.info('PARAMS:')
+            for k,n in enumerate(params.keys()):
+                logger.info('%s = %f' % (n,params[n]))
         else:
-            logger.info('ALLPARAMS: None')
+            logger.info('PARAMS: None')
         if fitvmicro:
             logger.info('Fitting VMICRO')
         if fitvsini:
@@ -1139,15 +1139,15 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,fitvsini=False
     # I'M NOT SURE THIS IS WORKING, VROT IS STAYING THE SAME
 
     
-    # Initialize allparams
-    if allparams is None:
-        allparams = {}
+    # Initialize params
+    if params is None:
+        params = {}
     else:
-        allparams = dict((key.upper(), value) for (key, value) in allparams.items())  # all CAPS
+        params = dict((key.upper(), value) for (key, value) in params.items())  # all CAPS
     # Using input values when possible, otherwise Doppler values
     for k,name in enumerate(['TEFF','LOGG','FE_H','RV','VROT']):
-        if allparams.get(name) is None:
-            allparams[name] = out2['pars'][0][k]
+        if params.get(name) is None:
+            params[name] = out2['pars'][0][k]
 
 
     # Get Vmicro using Teff/logg relation
@@ -1156,12 +1156,12 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,fitvsini=False
     # vmicro = 10^(0.226−0.0228*logg+0.0297*(logg)^2−0.0113*(logg)^3 )
     # coef = [0.226,0.0228,0.0297,−0.0113]
     # only giants, was fit in dwarfs
-    if allparams.get('VMICRO') is None:
+    if params.get('VMICRO') is None:
         vmicro = 2.0  # default
-        if allparams['LOGG']<3.8:
+        if params['LOGG']<3.8:
             vmcoef = [0.226,0.0228,0.0297,-0.0113]
-            vmicro = 10**dln.poly(allparams['LOGG'],vmcoef[::-1])
-        allparams['VMICRO'] = vmicro
+            vmicro = 10**dln.poly(params['LOGG'],vmcoef[::-1])
+        params['VMICRO'] = vmicro
 
     # for giants
     # vmacro = 10^(0.741−0.0998*logg−0.225[M/H])
@@ -1174,14 +1174,14 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,fitvsini=False
     if verbose>0:
         logger.info(' ')
         logger.info('Step 3: Fitting stellar parameters, RV and broadening')
-    allparams3 = allparams.copy()
+    params3 = params.copy()
     fitparams3 = ['TEFF','LOGG','FE_H','ALPHA_H','RV']    
-    if allparams3['VROT']>0 or fitvsini is True:
+    if params3['VROT']>0 or fitvsini is True:
         fitparams3.append('VROT')
     # Fit Vmicro as well if it's a dwarf
-    if allparams3['LOGG']>3.8 or allparams3['TEFF']>8000 or fitvmicro is True:
+    if params3['LOGG']>3.8 or params3['TEFF']>8000 or fitvmicro is True:
         fitparams3.append('VMICRO')
-    out3, model3 = fit_lsq(spec,allparams3,fitparams3,verbose=verbose,logger=logger)
+    out3, model3 = fit_lsq(spec,params3,fitparams3,verbose=verbose,logger=logger)
 
     # Should we fit C_H and N_H as well??
 
@@ -1203,9 +1203,9 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,fitvsini=False
     if verbose>0:
         logger.info(' ')
         logger.info('Step 4: Fitting each element separately')
-    allparams4 = allparams3.copy()
+    params4 = params3.copy()
     for k in range(len(fitparams3)):
-        allparams4[fitparams3[k]] = out3['pars'][0][k]
+        params4[fitparams3[k]] = out3['pars'][0][k]
     nelem = len(elem)
     if nelem>0:
         if verbose>0:
@@ -1214,11 +1214,11 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,fitvsini=False
         elemcat['name'] = elem
         for k in range(nelem):
             t4b = time.time()
-            allparselem = allparams4.copy()
+            allparselem = params4.copy()
             if elem[k] in ['O','MG','SI','S','CA','TI']:
-                allparselem[elem[k]+'_H'] = allparams4['ALPHA_H']
+                allparselem[elem[k]+'_H'] = params4['ALPHA_H']
             else:
-                allparselem[elem[k]+'_H'] = allparams4['FE_H']
+                allparselem[elem[k]+'_H'] = params4['FE_H']
             fitparselem = [elem[k]+'_H']
             out4, model4 = fit_lsq(spec,allparselem,fitparselem,verbose=verbose,logger=logger)
             elemcat['par'][k] = out4['pars'][0]
@@ -1238,18 +1238,18 @@ def fit(spec,allparams=None,fitparams=None,elem=None,figfile=None,fitvsini=False
         t5 = time.time()
         if verbose>0:
             logger.info('Step 5: Fit all parameters simultaneously')
-        allparams5 = allparams4.copy()
+        params5 = params4.copy()
         for k in range(nelem):
-            allparams5[elem[k]+'_H'] = elemcat['par'][k]
-        if allparams5.get('ALPHA_H') is not None:
-            del allparams5['ALPHA_H']
+            params5[elem[k]+'_H'] = elemcat['par'][k]
+        if params5.get('ALPHA_H') is not None:
+            del params5['ALPHA_H']
         fitparams5 = ['TEFF','LOGG','FE_H','RV']
         if 'VROT' in fitparams3 or fitvsini is True:
             fitparams5.append('VROT')
         if 'VMICRO' in fitparams3 or fitvmicro is True:
             fitparams5.append('VMICRO')
         fitparams5 = fitparams5+list(np.char.array(elem)+'_H')
-        out5, model5 = fit_lsq(spec,allparams5,fitparams5,verbose=verbose,logger=logger)
+        out5, model5 = fit_lsq(spec,params5,fitparams5,verbose=verbose,logger=logger)
     else:
         out5 = out3
         model5 = model3
