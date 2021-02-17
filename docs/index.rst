@@ -65,7 +65,7 @@ Here are the various input arguments for command-line script `hofer`::
     -f FPARS, --fpars FPARS
                           List of parameteres to fit
     -i INIT, --init INIT  Initial parameters to use
-    --outfile OUTFILE     Output filename
+    -o, --outfile OUTFILE Output filename
     --figfile FIGFILE     Figure filename
     -d OUTDIR, --outdir OUTDIR
                           Output directory
