@@ -42,13 +42,13 @@ warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 cspeed = 2.99792458e5  # speed of light in km/s
 
 class SpecFitter:
-    def __init__ (self,spec,allparams,fitparams=None,verbose=False):
+    def __init__ (self,spec,params,fitparams=None,norm=True,verbose=False):
         # Parameters
-        self.allparams = allparams
+        self.params = params
         if fitparams is not None:
             self.fitparams = fitparams
         else:
-            self.fitparams = list(allparams.keys())  # by default fit all parameters            
+            self.fitparams = list(params.keys())  # by default fit all parameters            
         self.nsynfev = 0  # number of synthetic spectra made
         self.njac = 0     # number of times jacobian called
         # Save spectrum information    
@@ -60,6 +60,7 @@ class SpecFitter:
         self.lsf.wavevac = spec.wavevac  # need this later for synspec prep
         self.wavevac = spec.wavevac
         self.verbose = verbose
+        self.norm = norm    # normalize
         # Convert vacuum to air wavelengths
         #  synspec uses air wavelengths
         wave = spec.wave.copy()
@@ -93,13 +94,13 @@ class SpecFitter:
         self._jac_array = None
 
     @property
-    def allparams(self):
-        return self._allparams
+    def params(self):
+        return self._params
 
-    @allparams.setter
-    def allparams(self,allparams):
+    @params.setter
+    def params(self,params):
         """ Dictionary, keys must be all CAPS."""
-        self._allparams = dict((key.upper(), value) for (key, value) in allparams.items())  # all CAPS
+        self._params = dict((key.upper(), value) for (key, value) in params.items())  # all CAPS
 
     @property
     def fitparams(self):
@@ -113,7 +114,7 @@ class SpecFitter:
     def mkinputs(self,args):
         """ Make INPUTS dictionary."""
         # Create INPUTS with all arguments needed to make the spectrum
-        inputs = self.allparams.copy()  # initialize with initial/fixed values
+        inputs = self.params.copy()  # initialize with initial/fixed values
         for k in range(len(self.fitparams)):        # this overwrites the values for the fitted values
             inputs[self.fitparams[k]] = args[k]
         inputs['DW'] = self._dwair          # add in wavelength parameters
@@ -126,6 +127,7 @@ class SpecFitter:
         
     def model(self, xx, *args):
         """ Return a model spectrum flux with the given input arguments."""
+        # The input arguments correspond to FITPARAMS
         # This corrects for air/vacuum wavelength differences
         if self.verbose:
             print(args)
@@ -441,7 +443,7 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp'):
         vrot = 0.0
     # Get the abundances
     abu = getabund(inputs,verbose=verbose)
-    
+
     wave,flux,cont = synple.syn(modelfile,(w0,w1),dw,vmicro=vmicro,vrot=vrot,
                                 abu=list(abu),verbose=verbose)
 
@@ -599,8 +601,7 @@ def prepare_synthspec(synspec,lsf,norm=True):
         #  convert FWHM (A) in number of model pixels at those positions
         dwmod = dln.slope(modelwave)
         dwmod = np.hstack((dwmod,dwmod[-1]))
-        xpmod = interp1d(modelwave,np.arange(len(modelwave)),kind='cubic',bounds_error=False,
-                         fill_value=(np.nan,np.nan),assume_sorted=False)(wobs[xp])
+        xpmod = dln.interp(modelwave,np.arange(len(modelwave)),wobs[xp],kind='cubic',assume_sorted=False,extrapolate=True)
         xpmod = np.round(xpmod).astype(int)
         fwhmpix = np.abs(fwhm/dwmod[xpmod])
         # need at least ~4 pixels per LSF FWHM across the spectrum
@@ -696,22 +697,22 @@ def mkdxlim(fitparams):
     return dx_lim
 
     
-def initpars(allparams,fitparams):
-    """ Make initial set of parameters given ALLPARAMS and
+def initpars(params,fitparams):
+    """ Make initial set of parameters given PARAMS and
         FITPARAMS."""
 
-    allparams = dict((key.upper(), value) for (key, value) in allparams.items()) # all CAPS
+    params = dict((key.upper(), value) for (key, value) in params.items()) # all CAPS
     fitparams = [v.upper() for v in fitparams]  # all CAPS
     
     npars = len(fitparams)
     pinit = np.zeros(npars,np.float64)
     # Loop over parameters
     for k in range(npars):
-        ind, = np.where(np.char.array(list(allparams.keys()))==fitparams[k])
-        # This parameter is in ALLPARAMS
+        ind, = np.where(np.char.array(list(params.keys()))==fitparams[k])
+        # This parameter is in PARAMS
         if len(ind)>0:
-            pinit[k] = allparams[fitparams[k]]
-        # Not in ALLPARAMS
+            pinit[k] = params[fitparams[k]]
+        # Not in PARAMS
         else:
             if fitparams[k]=='RV':
                 pinit[k] = 0.0
@@ -725,8 +726,8 @@ def initpars(allparams,fitparams):
                 pinit[k] = 3.0
             elif fitparams[k].endswith('_H'):
                 # Abundances, use FE_H if possible
-                if 'FE_H' in allparams.keys():
-                    pinit[k] = allparams['FE_H']
+                if 'FE_H' in params.keys():
+                    pinit[k] = params['FE_H']
                 else:
                     pinit[k] = 0.0
             else:
@@ -936,6 +937,129 @@ def dopvrot_lsq(spec,models=None,initpar=None,verbose=False,logger=None):
     return out, lsmodel
 
 
+def fit_elem(spec,params,elem,verbose=0,logger=None):
+    """ Fit an individual element."""
+
+    t0 = time.time()
+    
+    if logger is None:
+        logger = dln.basiclogger()
+
+    # Create fitparams
+    #fitparams = [e+'_H' for e in elem]
+    fitparams = elem.copy()
+    
+    if verbose>0:
+        logger.info('Fitting: '+', '.join(fitparams))
+    
+    # Initialize the fitter
+    spfitter = SpecFitter(spec,params,fitparams=fitparams,verbose=(verbose>=2))
+    spfitter.logger = logger
+    spfitter.norm = True  # normalize the synthetic spectrum
+    #spfitter.verbose = True
+    pinit = initpars(params,elem)
+    bounds = mkbounds(elem)
+
+    # Initalize output
+    npar = len(fitparams)
+    dtyp = []
+    for f in fitparams:
+        dtyp += [(f,float)]
+    dtyp += [('pars',float,npar),('chisq',float),('nsynfev',int)]
+    dtype = np.dtype(dtyp)
+    out = np.zeros(1,dtype=dtype)
+    
+    # Loop over elemental abundances
+    flag = 0
+    abund = -2.0
+    dabund = 1.0
+    count = 0
+    abundarr = []
+    chisq = []
+    modelarr = []
+    # Loop from -2 to +1 or until we get through the minimum
+    while (flag==0):
+        model = spfitter.model(spec.wave.flatten(),abund)
+        chisq1 = spfitter.chisq(model)
+        abundarr.append(abund)
+        modelarr.append(model)
+        chisq.append(chisq1)
+        logger.info('%f %f' % (abund,chisq1))
+        # Are we done?
+        if (abund>=1) and (chisq1 != np.min(np.array(chisq))):
+            flag = 1
+        if (abund >= 5):
+            flag = 1
+        # Increment the abundance
+        abund += dabund
+        count += 1
+
+    # Best value is at the end, just return that value
+    bestind = np.argmin(chisq)
+    if (bestind==0) or (bestind==len(chisq)-1):
+        bestabund = abundarr[bestind]
+        for k,f in enumerate(fitparams):
+            out[f] = bestabund
+        out['pars'] = bestabund
+        out['chisq'] = np.min(chisq)
+        out['nsynfev'] = spfitter.nsynfev
+        model = modelarr[bestind]
+        return out, model
+    
+    # Now refine twice
+    for i in range(2):
+        # Get best value
+        bestind = np.argmin(np.array(chisq))
+        # get values half-way to left and right
+        # Left
+        lftind = bestind-1
+        lftabund = np.mean([abundarr[lftind],abundarr[bestind]])
+        lftmodel = spfitter.model(spec.wave.flatten(),lftabund)
+        lftchisq = spfitter.chisq(lftmodel)
+        abundarr.append(lftabund)
+        modelarr.append(lftmodel)
+        chisq.append(lftchisq)
+        logger.info('%f %f' % (lftabund,lftchisq))
+        # Right
+        rgtind = bestind+1        
+        rgtabund = np.mean([abundarr[bestind],abundarr[rgtind]])        
+        rgtmodel = spfitter.model(spec.wave.flatten(),rgtabund)
+        rgtchisq = spfitter.chisq(rgtmodel)
+        abundarr.append(rgtabund)
+        modelarr.append(rgtmodel)
+        chisq.append(rgtchisq)
+        logger.info('%f %f' % (rgtabund,rgtchisq))
+        # Sort arrays
+        si = np.argsort(abundarr)
+        abundarr = [abundarr[k] for k in si]
+        chisq = [chisq[k] for k in si]
+        modelarr = [modelarr[k] for k in si]        
+        
+    # Now interpolate to find the best value
+    abundarr2 = np.linspace(np.min(abundarr),np.max(abundarr),1000)
+    chisq2 = interp1d(abundarr,chisq,kind='quadratic')(abundarr2)
+    bestind = np.argmin(chisq2)
+    bestabund = abundarr2[bestind]
+
+    # Get the model at the best value
+    model = spfitter.model(spec.wave.flatten(),bestabund)
+    bestchisq = spfitter.chisq(model)
+    # Populate output structure
+    for k,f in enumerate(fitparams):
+        out[f] = bestabund
+    out['pars'] = bestabund
+    out['chisq'] = bestchisq
+    out['nsynfev'] = spfitter.nsynfev
+
+    if verbose>0:
+        logger.info('%f %f' % (bestabund,bestchisq))
+        logger.info('nfev = %i' % spfitter.nsynfev)
+        logger.info('dt = %.2f sec.' % (time.time()-t0))
+        logger.info(' ')
+    
+    return out, model
+    
+
 def fit_lsq(spec,params,fitparams=None,verbose=0,logger=None):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
@@ -970,7 +1094,7 @@ def fit_lsq(spec,params,fitparams=None,verbose=0,logger=None):
          spec = doppler.read(file)
          params = {'teff':5500,'logg':3.0,'fe_h':-1.0,'rv':0.0,'ca_h':-1.0}
          fitparams = ['teff','logg','fe_h','rv','ca_h']
-         out,model = specfit.fit_lsq(spec,allparams,fitparams=fitparams)
+         out,model = specfit.fit_lsq(spec,params,fitparams=fitparams)
 
     """
 
@@ -1106,7 +1230,7 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
     
     # Default set of elements
     if elem is None:
-        elem = ['C','N','O','NA','MG','AL','SI','K','CA','TI','V','CR','MN','CO','NI','CU','CE','ND']
+        elem = ['C','N','O','NA','MG','AL','SI','K','CA','TI','V','CR','MN','CO','NI','CU','SR','CE','ND']
     
     # Normalize the spectrum
     if spec.normalized==False:
@@ -1202,6 +1326,7 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
     # maximum of 15 km/s
 
     
+    
     # 3) Fit stellar parameters (Teff, logg, feh, alpha, RV, Vsini)
     #--------------------------------------------------------------
     t3 = time.time()    
@@ -1246,17 +1371,19 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
         elemcat['name'] = elem
         for k in range(nelem):
             t4b = time.time()
-            allparselem = params4.copy()
+            parselem = params4.copy()
             if elem[k] in ['O','MG','SI','S','CA','TI']:
-                allparselem[elem[k]+'_H'] = params4['ALPHA_H']
+                parselem[elem[k]+'_H'] = params4['ALPHA_H']
             else:
-                allparselem[elem[k]+'_H'] = params4['FE_H']
+                parselem[elem[k]+'_H'] = params4['FE_H']
             fitparselem = [elem[k]+'_H']
-            out4, model4 = fit_lsq(spec,allparselem,fitparselem,verbose=verbose,logger=logger)
+            #out4, model4 = fit_lsq(spec,parselem,fitparselem,verbose=verbose,logger=logger)
+            out4, model4 = fit_elem(spec,parselem,fitparselem,verbose=verbose,logger=logger)            
             elemcat['par'][k] = out4['pars'][0]
-            elemcat['parerr'][k] = out4['parerr'][0]
+            #elemcat['parerr'][k] = out4['parerr'][0]
         if verbose>0:
             logger.info('dt = %f sec.' % (time.time()-t4))
+            logger.info(' ')
     else:
         if verbose>0:
             logger.info('No elements to fit')

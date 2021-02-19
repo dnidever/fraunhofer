@@ -204,7 +204,9 @@ def mkmodel(teff,logg,metal,outfile=None,ntau=None,mtype='odfnew'):
         avail = Table.read(modeldir()+'tefflogg.txt',format='ascii')
         avail['col1'].name = 'teff'
         avail['col2'].name = 'logg'
-        v1,nv1 = dln.where((np.abs(avail['teff']-teff) < 0.1) & (np.abs(avail['logg']-logg) <= 0.001))
+        availteff = avail['teff'].data
+        availlogg = avail['logg'].data   
+        v1,nv1 = dln.where((np.abs(availteff-teff) < 0.1) & (np.abs(availlogg-logg) <= 0.001))
         v2 = v1
         v3,nv3 = dln.where(abs(availmetal-metal) <= 0.001)
     else:
@@ -212,28 +214,28 @@ def mkmodel(teff,logg,metal,outfile=None,ntau=None,mtype='odfnew'):
         v2,nv2 = dln.where(abs(availlogg-logg) <= 0.001)
         v3,nv3 = dln.where(abs(availmetal-metal) <= 0.001)
 
-        if (teff <= max(availteff) and teff >= min(availteff) and logg <= max(availlogg) and
-            logg >= min(availlogg) and metal >= min(availmetal) and metal <= max(availmetal)):
+    if (teff <= max(availteff) and teff >= min(availteff) and logg <= max(availlogg) and
+        logg >= min(availlogg) and metal >= min(availmetal) and metal <= max(availmetal)):
 
-            # Model found, just read it
-            if (nv1>0 and nv2>0 and nv3>0):
-                # Direct extraction of the model
-                teff = availteff[v1[0]]
-                logg = availlogg[v2[0]]
-                metal = availmetal[v3[0]]
-                model,header,tail = read_kurucz(teff,logg,metal,mtype=mtype)
-                ntau = len(model[0,:])
-            # Need to interpolate
-            else:
-                model,header,tail = model_interp(teff,logg,metal,mtype=mtype)
-
+        # Model found, just read it
+        if (nv1>0 and nv2>0 and nv3>0):
+            # Direct extraction of the model
+            teff = availteff[v1[0]]
+            logg = availlogg[v2[0]]
+            metal = availmetal[v3[0]]
+            model,header,tail = read_kurucz(teff,logg,metal,mtype=mtype)
+            ntau = len(model[0,:])
+        # Need to interpolate
         else:
-            print('% KMOD:  The requested values of ([Fe/H],logg,Teff) fall outside')
-            print('% KMOD:  the boundaries of the grid.')
-            print('% KMOD:  Temperatures higher that 10000 K can be reached, by modifying rd_kmod.')
-            import pdb; pdb.set_trace()
-            return None, None, None
-            
+            model,header,tail = model_interp(teff,logg,metal,mtype=mtype)
+
+    else:
+        print('% KMOD:  The requested values of ([Fe/H],logg,Teff) fall outside')
+        print('% KMOD:  the boundaries of the grid.')
+        print('% KMOD:  Temperatures higher that 10000 K can be reached, by modifying rd_kmod.')
+        import pdb; pdb.set_trace()
+        return None, None, None
+        
     # Writing the outputfile
     if outfile is not None:
         if os.path.exists(outfile): os.remove(outfile)
@@ -274,10 +276,12 @@ def model_interp(teff,logg,metal,mtype='odfnew'):
         ntau = 72
 
     if mtype == 'odfnew' and teff > 10000:
-        avail = Table.read(kpath+'tefflogg.txt',format='ascii')
+        avail = Table.read(modeldir()+'tefflogg.txt',format='ascii')
         avail['col1'].name = 'teff'
         avail['col2'].name = 'logg'
-        v1,nv1 = dln.where(abs(avail['teff']-teff) < 0.1 and abs(avail['logg']-logg) <= 0.001)
+        availteff = avail['teff'].data
+        availlogg = avail['logg'].data
+        v1,nv1 = dln.where((abs(availteff-teff) < 0.1) & (abs(availlogg-logg) <= 0.001))
         v2 = v1
         v3,nv3 = dln.where(abs(availmetal-metal) <= 0.001)
     else:
