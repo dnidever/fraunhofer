@@ -208,6 +208,7 @@ def mkmodel(teff,logg,metal,outfile=None,ntau=None,mtype='odfnew'):
         availlogg = avail['logg'].data   
         v1,nv1 = dln.where((np.abs(availteff-teff) < 0.1) & (np.abs(availlogg-logg) <= 0.001))
         v2 = v1
+        nv2 = nv1
         v3,nv3 = dln.where(abs(availmetal-metal) <= 0.001)
     else:
         v1,nv1 = dln.where(abs(availteff-teff) <= .1)
