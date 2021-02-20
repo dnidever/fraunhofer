@@ -446,7 +446,7 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp'):
 
     wave,flux,cont = synple.syn(modelfile,(w0,w1),dw,vmicro=vmicro,vrot=vrot,
                                 abu=list(abu),verbose=verbose)
-
+    
     # Delete temporary files
     shutil.rmtree(tdir)
     os.chdir(curdir)
@@ -543,7 +543,7 @@ def model_spectrum(inputs,verbose=False,keepextend=False):
     inputsext['VMICRO'] = 0
     inputsext['VROT'] = 0
     wave1,flux1,cont1 = synple_wrapper(inputsext,verbose=verbose)
-
+    
     # Get final wavelength array
     wv1, ind1 = dln.closest(wave1,w0)
     wv2, ind2 = dln.closest(wave1,w1)
@@ -621,7 +621,7 @@ def prepare_synthspec(synspec,lsf,norm=True):
         cont = synple.interp_spl(wobs, modelwave, modelcont)
         pspec.flux[:,o] = flux
         pspec.cont[:,o] = cont        
-
+        
     # Normalize
     if norm is True:
         pspec.normalize()
@@ -753,8 +753,8 @@ def specfigure(figfile,spec,fmodel,out,original=None,verbose=True,figsize=10):
         fig.set_figwidth(figsize)
         if original is not None:
             plt.plot(original.wave,original.flux,color='green',label='Original',linewidth=1)
-        plt.plot(spec.wave,spec.flux,'b',label='Masked Data',linewidth=1)
-        plt.plot(fmodel.wave,fmodel.flux,'r',label='Model',linewidth=1,alpha=0.8)
+        plt.plot(spec.wave,spec.flux,'b',label='Masked Data',linewidth=0.5)
+        plt.plot(fmodel.wave,fmodel.flux,'r',label='Model',linewidth=0.5,alpha=0.8)
         leg = ax.legend(loc='upper left', frameon=True, framealpha=0.8, ncol=nlegcol)
         plt.xlabel('Wavelength (Angstroms)')
         plt.ylabel('Normalized Flux')
@@ -779,8 +779,8 @@ def specfigure(figfile,spec,fmodel,out,original=None,verbose=True,figsize=10):
         for i in range(norder):
             if original is not None:
                 ax[i].plot(original.wave[:,i],original.flux[:,i],color='green',label='Original',linewidth=1)            
-            ax[i].plot(spec.wave[:,i],spec.flux[:,i],'b',label='Masked Data',linewidth=1)
-            ax[i].plot(fmodel.wave[:,i],fmodel.flux[:,i],'r',label='Model',linewidth=1,alpha=0.8)
+            ax[i].plot(spec.wave[:,i],spec.flux[:,i],'b',label='Masked Data',linewidth=0.5)
+            ax[i].plot(fmodel.wave[:,i],fmodel.flux[:,i],'r',label='Model',linewidth=0.5,alpha=0.8)
             if i==0:
                 leg = ax[i].legend(loc='upper left', frameon=True, framealpha=0.8, ncol=nlegcol)
             ax[i].set_xlabel('Wavelength (Angstroms)')
@@ -984,7 +984,8 @@ def fit_elem(spec,params,elem,verbose=0,logger=None):
         abundarr.append(abund)
         modelarr.append(model)
         chisq.append(chisq1)
-        logger.info('%f %f' % (abund,chisq1))
+        if verbose>0:
+            logger.info('%f %f' % (abund,chisq1))
         # Are we done?
         if (abund>=1) and (chisq1 != np.min(np.array(chisq))):
             flag = 1
@@ -1004,6 +1005,11 @@ def fit_elem(spec,params,elem,verbose=0,logger=None):
         out['chisq'] = np.min(chisq)
         out['nsynfev'] = spfitter.nsynfev
         model = modelarr[bestind]
+        if verbose>0:
+            logger.info('%f %f' % (bestabund,np.min(chisq)))
+            logger.info('nfev = %i' % spfitter.nsynfev)
+            logger.info('dt = %.2f sec.' % (time.time()-t0))
+            logger.info(' ')
         return out, model
     
     # Now refine twice
@@ -1019,7 +1025,8 @@ def fit_elem(spec,params,elem,verbose=0,logger=None):
         abundarr.append(lftabund)
         modelarr.append(lftmodel)
         chisq.append(lftchisq)
-        logger.info('%f %f' % (lftabund,lftchisq))
+        if verbose>0:
+            logger.info('%f %f' % (lftabund,lftchisq))
         # Right
         rgtind = bestind+1        
         rgtabund = np.mean([abundarr[bestind],abundarr[rgtind]])        
@@ -1028,7 +1035,8 @@ def fit_elem(spec,params,elem,verbose=0,logger=None):
         abundarr.append(rgtabund)
         modelarr.append(rgtmodel)
         chisq.append(rgtchisq)
-        logger.info('%f %f' % (rgtabund,rgtchisq))
+        if verbose>0:
+            logger.info('%f %f' % (rgtabund,rgtchisq))
         # Sort arrays
         si = np.argsort(abundarr)
         abundarr = [abundarr[k] for k in si]
