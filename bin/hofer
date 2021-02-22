@@ -14,6 +14,7 @@ from dlnpyutils import utils as dln
 import numpy as np
 import subprocess
 import logging
+import traceback
 from fraunhofer import specfit
 
 # Main command-line program
@@ -135,43 +136,51 @@ if __name__ == "__main__":
             figfile = inpfigfile
         if (inpfigfile=='') & (saveplot is True):
             fdir,base,ext = doppler.utils.splitfilename(f)
-            figfile = base+'_fraunhofer.png'
+            figfile = base+'_fraunhofer.pdf'
             if outdir is not None: figfile = outdir+'/'+figfile
             if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile 
             
         # HAVE A FLAG TO CALL FIT_LSQ() DIRECTLY????
         
         # Run Fraunhofer
-        if fpars is None:
-            out, model = specfit.fit(spec,params=params,elem=elem,
-                                     fitvmicro=fitvmicro,fitvsini=fitvsini,
-                                     figfile=figfile,verbose=verbose,
-                                     logger=logger)
+        try:
+            if fpars is None:
+                out, model = specfit.fit(spec,params=params,elem=elem,
+                                         fitvmicro=fitvmicro,fitvsini=fitvsini,
+                                         figfile=figfile,verbose=verbose,
+                                         logger=logger)
 
-        # Run fit_lsq() directly
-        else:
-            out, model = specfit.fit_lsq(spec,params,fitparams=fpars,
-                                         verbose=verbose,logger=logger)            
+            # Run fit_lsq() directly
+            else:
+                out, model = specfit.fit_lsq(spec,params,fitparams=fpars,
+                                             verbose=verbose,logger=logger)            
             
-        # Save the output
-        if inpoutfile!='':
-            outfile = inpoutfile
-        else:
-            fdir,base,ext = doppler.utils.splitfilename(f)
-            outfile = base+'_fraunhofer.fits'
-            if outdir is not None: outfile = outdir+'/'+outfile
-            if (outdir is None) & (fdir != ''): outfile = fdir+'/'+outfile
-        if verbose>0:
-            logger.info('Writing output to '+outfile)
-        if os.path.exists(outfile): os.remove(outfile)
-        Table(out).write(outfile)
-        # append best model
-        hdulist = fits.open(outfile)
-        hdu = fits.PrimaryHDU(model.flux)
-        hdulist.append(hdu)
-        hdulist.writeto(outfile,overwrite=True)
-        hdulist.close()
+            # Save the output
+            if inpoutfile!='':
+                outfile = inpoutfile
+            else:
+                fdir,base,ext = doppler.utils.splitfilename(f)
+                outfile = base+'_fraunhofer.fits'
+                if outdir is not None: outfile = outdir+'/'+outfile
+                if (outdir is None) & (fdir != ''): outfile = fdir+'/'+outfile
+            if verbose>0:
+                logger.info('Writing output to '+outfile)
+            if os.path.exists(outfile): os.remove(outfile)
+            Table(out).write(outfile)
+            # append best model
+            hdulist = fits.open(outfile)
+            hdu = fits.PrimaryHDU(model.flux)
+            hdulist.append(hdu)
+            hdulist.writeto(outfile,overwrite=True)
+            hdulist.close()
 
+        # Handle exceptions
+        except Exception as e:
+            if verbose is True:
+                print('hofer failed on '+f+' '+str(e))
+                traceback.print_exc()
+        
+            
     now = datetime.datetime.now()
     if verbose>0:
         logger.info(" ")

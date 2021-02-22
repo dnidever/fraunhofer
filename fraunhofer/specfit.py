@@ -61,13 +61,16 @@ class SpecFitter:
         self.wavevac = spec.wavevac
         self.verbose = verbose
         self.norm = norm    # normalize
+        self.continuum_func = spec.continuum_func
         # Convert vacuum to air wavelengths
         #  synspec uses air wavelengths
-        wave = spec.wave.copy()
+        wave = np.atleast_2d(spec.wave.copy()).T
         if spec.wavevac is True:
             wave = astro.vactoair(wave.flatten()).reshape(spec.wave.shape)
+            wave = np.atleast_2d(wave).T
         # Figure out the wavelength parameters
-        npix,norder = spec.flux.shape
+        npix = spec.npix
+        norder = spec.norder
         xp = np.arange(npix//20)*20
         wr = np.zeros((spec.lsf.norder,2),np.float64)
         dw = np.zeros(spec.lsf.norder,np.float64)
@@ -76,7 +79,7 @@ class SpecFitter:
             dw[o] = np.median(dln.slope(wave[:,o]))
             wr[o,0] = np.min(wave[:,o])
             wr[o,1] = np.max(wave[:,o])            
-            fwhm = spec.lsf.fwhm(spec.wave[xp,o],xtype='Wave',order=o)
+            fwhm = spec.lsf.fwhm(wave[xp,o],xtype='Wave',order=o)
             # FWHM is in units of lsf.xtype, convert to wavelength/angstroms, if necessary
             if spec.lsf.xtype.lower().find('pix')>-1:
                 fwhm *= np.abs(dw[o])
@@ -139,7 +142,8 @@ class SpecFitter:
         synspec = model_spectrum(inputs,verbose=self.verbose)   # always returns air wavelengths
         self.nsynfev += 1
         # Convolve with the LSF and do air/vacuum wave conversion
-        pspec = prepare_synthspec(synspec,self.lsf,norm=self.norm)
+        pspec = prepare_synthspec(synspec,self.lsf,norm=self.norm,
+                                  continuum_func=self.continuum_func)
         # Save models/pars/chisq
         self._all_pars.append(list(args).copy())
         self._all_model.append(pspec.flux.flatten().copy())
@@ -220,7 +224,8 @@ class SpecFitter:
         # Trim to final wavelengths
         smorigspec = trim_spectrum(smorigspec,w0,w1)
         # Convolve with the LSF and do air/vacuum wave conversion
-        pspec = prepare_synthspec(smorigspec,self.lsf,norm=self.norm)
+        pspec = prepare_synthspec(smorigspec,self.lsf,norm=self.norm,
+                                  continuum_func=self.continuum_func)
         # Flatten the spectrum
         f0 = pspec.flux.flatten()
         # Save models/pars/chisq
@@ -271,7 +276,8 @@ class SpecFitter:
                 synspec.wave = astro.airtovac(synspec.wave)
                 synspec.wavevac = True
             # Convolve with the LSF and do air/vacuum wave conversion
-            pspec = prepare_synthspec(synspec,self.lsf,norm=self.norm)
+            pspec = prepare_synthspec(synspec,self.lsf,norm=self.norm,
+                                      continuum_func=self.continuum_func)
             # Flatten the spectrum
             f1 = pspec.flux.flatten()
 
@@ -560,7 +566,7 @@ def model_spectrum(inputs,verbose=False,keepextend=False):
     return synspec
 
 
-def prepare_synthspec(synspec,lsf,norm=True):
+def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
     """ Prepare a synthetic spectrum to be compared to an observed spectrum."""
     # Convolve with LSF and do air<->vacuum wavelength conversion
     
@@ -576,14 +582,21 @@ def prepare_synthspec(synspec,lsf,norm=True):
             synspec.wavevac = False
         
     # Initialize the output spectrum
-    npix,norder = lsf.wave.shape
+    if lsf.wave.ndim==2:
+        npix,norder = lsf.wave.shape
+    else:
+        npix = len(lsf.wave)
+        norder = 1
     pspec = Spec1D(np.zeros((npix,norder),np.float32),err=np.zeros((npix,norder),np.float32),
                    wave=lsf.wave,lsfpars=lsf.pars,lsftype=lsf.lsftype,lsfxtype=lsf.xtype)
     pspec.cont = np.zeros((npix,norder),np.float32)
+    if continuum_func is not None:
+        pspec.continuum_func = continuum_func
         
     # Loop over orders
+    wave = np.atleast_2d(lsf.wave).T
     for o in range(lsf.norder):
-        wobs = lsf.wave[:,o]
+        wobs = wave[:,o]
         dw = np.median(dln.slope(wobs))
         wv1,ind1 = dln.closest(synspec.wave,np.min(wobs)-2*np.abs(dw))
         wv2,ind2 = dln.closest(synspec.wave,np.max(wobs)+2*np.abs(dw))
