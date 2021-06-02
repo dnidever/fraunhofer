@@ -154,21 +154,36 @@ class SpecFitter:
     def getstep(self,name,val,relstep=0.02):
         """ Calculate step for a parameter."""
         # It mainly deals with edge cases
-        if val != 0.0:
-            step = relstep*val
+        #if val != 0.0:
+        #    step = relstep*val
+        #else:
+        #    if name=='RV':
+        #        step = 1.0
+        #    elif name=='VROT':
+        #        step = 0.5
+        #    elif name=='VMICRO':
+        #        step = 0.5
+        #    elif name.endswith('_H'):
+        #        step = 0.02
+        #    else:
+        #        step = 0.02
+        if name=='TEFF':
+            step = 5.0
+        elif name=='RV':
+            step = 0.1
+        elif name=='VROT':
+            step = 0.5
+        elif name=='VMICRO':
+            step = 0.5
+        elif name.endswith('_H'):
+            step = 0.01
         else:
-            if name=='RV':
-                step = 1.0
-            elif name=='VROT':
-                step = 0.5
-            elif name=='VMICRO':
-                step = 0.5
-            elif name.endswith('_H'):
-                step = 0.02
-            else:
-                step = 0.02
+            step = 0.01
         return step
                 
+        return step
+
+    
     def jac(self,x,*args):
         """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
         is the partial derivative of f[i] with respect to x[j]). """
