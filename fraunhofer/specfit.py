@@ -447,7 +447,10 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
         linelist[0] = alinefile
     if mlinefile is not None:   # molecular linelist input
         linelist[1] = mlinefile
-    
+
+    if verbose:
+        print('Using linelist: ',linelist)
+        
     # Make key names all CAPS
     inputs = dict((key.upper(), value) for (key, value) in inputs.items())
     
@@ -1322,7 +1325,13 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
         else:
             logger.info('No elements to fit')
         logger.info(' ')
-            
+
+    # Input linelists
+    if verbose and alinefile is not None:
+        logger.info('Using input atomic linelist: ',alinefile)
+    if verbose and mlinefile is not None:
+        logger.info('Using input molecular linelist: ',mlinefile)
+        
 
     # 1) Doppler (Teff, logg, feh, RV)
     #---------------------------------

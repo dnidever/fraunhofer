@@ -32,6 +32,8 @@ if __name__ == "__main__":
     parser.add_argument('--vmicro', action='store_true', help='Fit vmicro')
     parser.add_argument('--vsini', action='store_true', help='Fit vsini')    
     parser.add_argument('-r','--reader', type=str, nargs=1, default='', help='The spectral reader to use')
+    parser.add_argument('--alinefile', type=str, nargs=1, default='', help='Atomic linelist to use')
+    parser.add_argument('--mlinefile', type=str, nargs=1, default='', help='Molecular linelist to use')
     parser.add_argument('-v','--verbose', type=int, nargs='?', default=0, const=1, help='Verbosity level (0, 1, 2)')
 
     args = parser.parse_args()
@@ -49,7 +51,9 @@ if __name__ == "__main__":
     saveplot = args.plot
     inlist = dln.first_el(args.list)
     fitvmicro = args.vmicro
-    fitvsini = args.vsini    
+    fitvsini = args.vsini
+    alinefile = args.alinefile
+    mlinefile = args.mlinefile
     # Elements to fit
     elem = dln.first_el(args.elem)
     if elem != '':
@@ -148,12 +152,14 @@ if __name__ == "__main__":
                 out, model = specfit.fit(spec,params=params,elem=elem,
                                          fitvmicro=fitvmicro,fitvsini=fitvsini,
                                          figfile=figfile,verbose=verbose,
+                                         alinefile=alinefile,mlinefile=mlinefile,
                                          logger=logger)
 
             # Run fit_lsq() directly
             else:
                 out, model = specfit.fit_lsq(spec,params,fitparams=fpars,
-                                             verbose=verbose,logger=logger)            
+                                             verbose=verbose,logger=logger,
+                                             alinefile=alinefile,mlinefile=mlinefile)
             
             # Save the output
             if inpoutfile!='':
