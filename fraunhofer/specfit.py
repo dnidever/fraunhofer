@@ -611,7 +611,10 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
         pspec.continuum_func = continuum_func
         
     # Loop over orders
-    wave = np.atleast_2d(lsf.wave).T
+    if lsf.wave.ndim==1:
+        wave = np.atleast_2d(lsf.wave.copy()).T
+    else:
+        wave = lsf.wave.copy()
     for o in range(lsf.norder):
         wobs = wave[:,o]
         dw = np.median(dln.slope(wobs))
