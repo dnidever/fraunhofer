@@ -654,10 +654,13 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
         cont = synple.interp_spl(wobs, modelwave, modelcont)
         pspec.flux[:,o] = flux
         pspec.cont[:,o] = cont        
+        pspec.normalized = True
         
     # Normalize
     if norm is True:
-        pspec.normalize()
+        newcont = pspec.continuum_func(pspec)
+        pspec.flux /= newcont
+        pspec.cont *= newcont
         
     return pspec
 
