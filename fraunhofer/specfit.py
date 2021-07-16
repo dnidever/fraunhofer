@@ -64,9 +64,11 @@ class SpecFitter:
         self.continuum_func = spec.continuum_func
         # Convert vacuum to air wavelengths
         #  synspec uses air wavelengths
-        wave = np.atleast_2d(spec.wave.copy()).T
         if spec.wavevac is True:
-            wave = astro.vactoair(wave.flatten()).reshape(spec.wave.shape)
+            wave = astro.vactoair(spec.wave.copy().flatten()).reshape(spec.wave.shape)
+        else:
+            wave = spec.wave.copy()
+        if wave.ndim==1:
             wave = np.atleast_2d(wave).T
         # Figure out the wavelength parameters
         npix = spec.npix
