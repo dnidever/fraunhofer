@@ -42,7 +42,8 @@ warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 cspeed = 2.99792458e5  # speed of light in km/s
 
 class SpecFitter:
-    def __init__ (self,spec,params,fitparams=None,norm=True,verbose=False):
+    def __init__ (self,spec,params,fitparams=None,norm=True,verbose=False,
+                  alinefile=None,mlinefile=None):
         # Parameters
         self.params = params
         if fitparams is not None:
@@ -62,6 +63,8 @@ class SpecFitter:
         self.verbose = verbose
         self.norm = norm    # normalize
         self.continuum_func = spec.continuum_func
+        self.alinefile = alinefile
+        self.mlinefile = mlinefile
         # Convert vacuum to air wavelengths
         #  synspec uses air wavelengths
         if spec.wavevac is True:
@@ -141,7 +144,8 @@ class SpecFitter:
         if self.verbose:
             print(inputs)
         # Create the synthetic spectrum
-        synspec = model_spectrum(inputs,verbose=self.verbose)   # always returns air wavelengths
+        synspec = model_spectrum(inputs,verbose=self.verbose,   # always returns air wavelengths
+                                 alinefile=self.alinefile,mlinefile=self.mlinefile)
         self.nsynfev += 1
         # Convolve with the LSF and do air/vacuum wave conversion
         pspec = prepare_synthspec(synspec,self.lsf,norm=self.norm,
@@ -234,7 +238,8 @@ class SpecFitter:
         tinputs['VMICRO'] = 0
         tinputs['VROT'] = 0
         tinputs['RV'] = 0
-        origspec = model_spectrum(tinputs,keepextend=True)  # always are wavelengths
+        origspec = model_spectrum(tinputs,keepextend=True,  # always are wavelengths
+                                  alinefile=self.alinefile,mlinefile=self.mlinefile)
         self.nsynfev += 1
         # Smooth and shift
         smorigspec = smoothshift_spectrum(origspec,vrot=vrot,vmicro=vmicro,rv=rv)
@@ -285,7 +290,8 @@ class SpecFitter:
                 # Trim to final wavelengths
                 synspec = trim_spectrum(synspec,w0,w1)
             else:
-                synspec = model_spectrum(tinputs)  # always returns air wavelengths
+                synspec = model_spectrum(tinputs,alinefile=self.alinefile,
+                                         mlinefile=self.mlinefile)  # always returns air wavelengths
                 self.nsynfev += 1
                 
             # Convert to vacuum wavelengths if necessary
@@ -423,7 +429,7 @@ def getabund(inputs,verbose=False):
     return abu
 
 
-def synple_wrapper(inputs,verbose=False,tmpbase='/tmp'):
+def synple_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=None):
     """ This is a wrapper around synple to generate a new synthetic spectrum."""
     # Wavelengths are all AIR!!
     
@@ -434,6 +440,13 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp'):
     curdir = os.path.abspath(os.curdir) 
     tdir = os.path.abspath(tempfile.mkdtemp(prefix="syn",dir=tmpbase))
     os.chdir(tdir)
+
+    # Linelists to use
+    linelist = ['gfallx3_bpo.19','kmol3_0.01_30.20']   # default values
+    if alinefile is not None:   # atomic linelist input
+        linelist[0] = alinefile
+    if mlinefile is not None:   # molecular linelist input
+        linelist[1] = mlinefile
     
     # Make key names all CAPS
     inputs = dict((key.upper(), value) for (key, value) in inputs.items())
@@ -468,7 +481,7 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp'):
     abu = getabund(inputs,verbose=verbose)
 
     wave,flux,cont = synple.syn(modelfile,(w0,w1),dw,vmicro=vmicro,vrot=vrot,
-                                abu=list(abu),verbose=verbose)
+                                abu=list(abu),verbose=verbose,linelist=linelist)
     
     # Delete temporary files
     shutil.rmtree(tdir)
@@ -532,7 +545,7 @@ def smoothshift_spectrum(inpspec,vmicro=None,vrot=None,rv=None):
     return spec
 
 
-def model_spectrum(inputs,verbose=False,keepextend=False):
+def model_spectrum(inputs,verbose=False,keepextend=False,alinefile=None,mlinefile=None):
     """
     This creates a model spectrum given the inputs:
     RV, Teff, logg, vmicro, vsini, [Fe/H], [X/Fe], w0, w1, dw.
@@ -565,7 +578,8 @@ def model_spectrum(inputs,verbose=False,keepextend=False):
     #  set vrot=vmicro=0, will convolve later if necessary
     inputsext['VMICRO'] = 0
     inputsext['VROT'] = 0
-    wave1,flux1,cont1 = synple_wrapper(inputsext,verbose=verbose)
+    wave1,flux1,cont1 = synple_wrapper(inputsext,verbose=verbose,alinefile=alinefile,
+                                       mlinefile=mlinefile)
     
     # Get final wavelength array
     wv1, ind1 = dln.closest(wave1,w0)
@@ -973,7 +987,7 @@ def dopvrot_lsq(spec,models=None,initpar=None,verbose=False,logger=None):
     return out, lsmodel
 
 
-def fit_elem(spec,params,elem,verbose=0,logger=None):
+def fit_elem(spec,params,elem,verbose=0,alinefile=None,mlinefile=None,logger=None):
     """ Fit an individual element."""
 
     t0 = time.time()
@@ -989,7 +1003,8 @@ def fit_elem(spec,params,elem,verbose=0,logger=None):
         logger.info('Fitting: '+', '.join(fitparams))
     
     # Initialize the fitter
-    spfitter = SpecFitter(spec,params,fitparams=fitparams,verbose=(verbose>=2))
+    spfitter = SpecFitter(spec,params,fitparams=fitparams,verbose=(verbose>=2),
+                          alinefile=alinefile,mlinefile=mlinefile)
     spfitter.logger = logger
     spfitter.norm = True  # normalize the synthetic spectrum
     #spfitter.verbose = True
@@ -1104,7 +1119,7 @@ def fit_elem(spec,params,elem,verbose=0,logger=None):
     return out, model
     
 
-def fit_lsq(spec,params,fitparams=None,verbose=0,logger=None):
+def fit_lsq(spec,params,fitparams=None,verbose=0,alinefile=None,mlinefile=None,logger=None):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
     abundances using least-squares.
@@ -1120,6 +1135,10 @@ def fit_lsq(spec,params,fitparams=None,verbose=0,logger=None):
          in PARAMS are fit.
     verbose : int, optional
          Verbosity level (0, 1, or 2).  The default is 0 and verbose=2 is for debugging.
+    alinefile : str, optional
+         The atomic linelist to use.  Default is None which means the default synple linelist is used.
+    mlinefile : str, optional
+         The molecular linelist to use.  Default is None which means the default synple linelist is used.
     logger : logging object, optional
          Logging object.
 
@@ -1163,7 +1182,8 @@ def fit_lsq(spec,params,fitparams=None,verbose=0,logger=None):
     npar = len(fitparams)
     
     # Initialize the fitter
-    spfitter = SpecFitter(spec,params,fitparams=fitparams,verbose=(verbose>=2))
+    spfitter = SpecFitter(spec,params,fitparams=fitparams,verbose=(verbose>=2),
+                          alinefile=alinefile,mlinefile=mlinefile)
     spfitter.logger = logger
     spfitter.norm = True  # normalize the synthetic spectrum
     pinit = initpars(params,fitparams)
@@ -1213,7 +1233,7 @@ def fit_lsq(spec,params,fitparams=None,verbose=0,logger=None):
 
 
 def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
-        verbose=None,logger=None):
+        verbose=None,alinefile=None,mlinefile=None,logger=None):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
     abundances using a multi-step iterative method.
@@ -1245,6 +1265,10 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
          logg<3.8:   vmicro = 10^(0.226−0.0228*logg+0.0297*(logg)^2−0.0113*(logg)^3 )
     verbose : int, optional
          Verbosity level (0, 1, or 2).  The default is 0 and verbose=2 is for debugging.
+    alinefile : str, optional
+         The atomic linelist to use.  Default is None which means the default synple linelist is used.
+    mlinefile : str, optional
+         The molecular linelist to use.  Default is None which means the default synple linelist is used.
     logger : logging object, optional
          Logging object.
 
@@ -1384,7 +1408,8 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
     # Fit Vmicro as well if it's a dwarf
     if params3['LOGG']>3.8 or params3['TEFF']>8000 or fitvmicro is True:
         fitparams3.append('VMICRO')
-    out3, model3 = fit_lsq(spec,params3,fitparams3,verbose=verbose,logger=logger)
+    out3, model3 = fit_lsq(spec,params3,fitparams3,verbose=verbose,
+                                    alinefile=alinefile,mlinefile=mlinefile,logger=logger)    
     # typically 9 min.
     
     # Should we fit C_H and N_H as well??
@@ -1422,7 +1447,8 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
                 parselem[elem[k]+'_H'] = params4['FE_H']
             fitparselem = [elem[k]+'_H']
             #out4, model4 = fit_lsq(spec,parselem,fitparselem,verbose=verbose,logger=logger)
-            out4, model4 = fit_elem(spec,parselem,fitparselem,verbose=verbose,logger=logger)            
+            out4, model4 = fit_elem(spec,parselem,fitparselem,verbose=verbose,
+                                    alinefile=alinefile,mlinefile=mlinefile,logger=logger)            
             elemcat['par'][k] = out4['pars'][0]
             #elemcat['parerr'][k] = out4['parerr'][0]
         if verbose>0:
@@ -1452,7 +1478,8 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
         if 'VMICRO' in fitparams3 or fitvmicro is True:
             fitparams5.append('VMICRO')
         fitparams5 = fitparams5+list(np.char.array(elem)+'_H')
-        out5, model5 = fit_lsq(spec,params5,fitparams5,verbose=verbose,logger=logger)
+        out5, model5 = fit_lsq(spec,params5,fitparams5,verbose=verbose,
+                               alinefile=alinefile,mlinefile=mlinefile,logger=logger)            
     else:
         out5 = out3
         model5 = model3
