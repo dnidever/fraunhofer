@@ -21,8 +21,8 @@ from fraunhofer import specfit
 if __name__ == "__main__":
     parser = ArgumentParser(description='Run Fraunhofer fitting on spectra')
     parser.add_argument('files', type=str, nargs='+', help='Spectrum FITS files')
-    parser.add_argument('-e','--elem', type=str, nargs=1, default='', help='List of elements to fit')    
-    parser.add_argument('-f','--fpars', type=str, nargs=1, default='', help='List of parameteres to fit')
+    parser.add_argument('-e','--elem', type=str, nargs=1, default='', help='List of elements to fit, only for fit()')    
+    parser.add_argument('-f','--fpars', type=str, nargs=1, default='', help='List of parameters to fit, only fit_lsq()')
     parser.add_argument('-i','--init', type=str, nargs=1, default='', help='Initial parameters to use')    
     parser.add_argument('-o','--outfile', type=str, nargs=1, default='', help='Output filename')
     parser.add_argument('--figfile', type=str, nargs=1, default='', help='Figure filename')
