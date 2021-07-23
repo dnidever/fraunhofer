@@ -722,7 +722,7 @@ def mkbounds(params):
     g, = np.where( (params.find('_H') != -1) & (params != 'FE_H') )
     if len(g)>0:
         lbounds[g] = -3
-        ubounds[g] = 5       
+        ubounds[g] = 10
 
     bounds = (lbounds,ubounds)
     return bounds
@@ -1043,7 +1043,7 @@ def fit_elem(spec,params,elem,verbose=0,alinefile=None,mlinefile=None,logger=Non
         # Are we done?
         if (abund>=1) and (chisq1 != np.min(np.array(chisq))):
             flag = 1
-        if (abund >= 5):
+        if (abund >= 10):
             flag = 1
         # Increment the abundance
         abund += dabund
