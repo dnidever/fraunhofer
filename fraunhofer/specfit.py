@@ -1236,7 +1236,7 @@ def fit_lsq(spec,params,fitparams=None,verbose=0,alinefile=None,mlinefile=None,l
 
 
 def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
-        verbose=None,alinefile=None,mlinefile=None,logger=None):
+        verbose=1,alinefile=None,mlinefile=None,logger=None):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
     abundances using a multi-step iterative method.
