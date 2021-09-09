@@ -41,6 +41,62 @@ warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 cspeed = 2.99792458e5  # speed of light in km/s
 
+def synmodel(spec,params,alinefile=None,mlinefile=None,verbose=False,normalize=True):
+    """
+    Synthetic spectrum model.
+
+    Parameters
+    ----------
+    spec : Spec1D object or str
+         The observed Spec1D spectrum to match or the name of a spectrum file.
+    params : dict
+         Dictionary of initial values to use or parameters/elements to hold fixed.
+    normalize : bool, optional
+         Renormalize the model spectrum using the observed spectrum's continuum function.  The
+         synthetic spectrum will already have been normalized using the "true" continuum.  This
+         step is to simulate any systematic effects of the spectrum normalization algorithm that
+         the observed spectrum undergoes.  Default is True.
+    verbose : int, optional
+         Verbosity level (0, 1, or 2).  The default is 0 and verbose=2 is for debugging.
+    alinefile : str, optional
+         The atomic linelist to use.  Default is None which means the default synple linelist is used.
+    mlinefile : str, optional
+         The molecular linelist to use.  Default is None which means the default synple linelist is used.
+
+    Returns
+    -------
+    model : Spec1D object
+        The synthetic spectrum.  The "true" continuum is in model.cont.
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         model = synmodel(spec,params)
+    """
+
+    # Read in the spectrum
+    if type(spec) is str:
+        filename = spec
+        spec = doppler.read(filename)
+        if spec is None:
+            print('Problem loading '+filename)
+            return
+
+    params = dict((key.upper(), value) for (key, value) in params.items())  # all CAPS
+        
+    # Initialize the fitter
+    fitparams = ['TEFF']  # "dummy" fitting variable
+    spfitter = SpecFitter(spec,params,fitparams=fitparams,verbose=(verbose>=2),
+                          alinefile=alinefile,mlinefile=mlinefile)
+    spfitter.norm = normalize  # normalize the synthetic spectrum
+    model = spfitter.model(spec.wave.flatten(),params['TEFF'],retobj=True)
+    model.instrument = 'Model'
+    
+    return model
+
+
 class SpecFitter:
     def __init__ (self,spec,params,fitparams=None,norm=True,verbose=False,
                   alinefile=None,mlinefile=None):
@@ -133,7 +189,7 @@ class SpecFitter:
     def chisq(self,model):
         return np.sqrt( np.sum( (self.flux-model)**2/self.err**2 )/len(self.flux) )
         
-    def model(self, xx, *args):
+    def model(self, xx, *args, retobj=False):
         """ Return a model spectrum flux with the given input arguments."""
         # The input arguments correspond to FITPARAMS
         # This corrects for air/vacuum wavelength differences
@@ -154,8 +210,11 @@ class SpecFitter:
         self._all_pars.append(list(args).copy())
         self._all_model.append(pspec.flux.flatten().copy())
         self._all_chisq.append(self.chisq(pspec.flux.flatten()))
-        # Return flattened spectrum        
-        return pspec.flux.flatten()
+        # Return flattened spectrum
+        if retobj:
+            return pspec
+        else:
+            return pspec.flux.flatten()
 
     def getstep(self,name,val,relstep=0.02):
         """ Calculate step for a parameter."""
@@ -435,7 +494,7 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     
     # inputs is a dictionary with all of the inputs
     # Teff, logg, [Fe/H], some [X/Fe], and the wavelength parameters (w0, w1, dw).
-
+    
     # Make temporary directory for synple to work in
     curdir = os.path.abspath(os.curdir) 
     tdir = os.path.abspath(tempfile.mkdtemp(prefix="syn",dir=tmpbase))
@@ -556,6 +615,24 @@ def model_spectrum(inputs,verbose=False,keepextend=False,alinefile=None,mlinefil
     shifts to velocity RV.
     
     The returned spectrum always uses AIR wavelengths!!!
+
+    Parameters
+    ----------
+    inputs : dictionary
+       Input parameters, stellar parameters, abundances.
+    keepextend : bool, optional
+       Keep the extensions on the ends.  Default is False.
+    alinefile : str, optional
+       Atomic linelist filename.  Default is None (use synple's default one).
+    mlinefile : str, optional
+       Molecular linelist filename.  Default is None (use synple's default one).
+    verbose : bool, optional
+       Verbose output.  Default is False.
+
+    Returns
+    -------
+    synspec : Spec1D
+       The synthetic spectrum as Spec1D object.
 
     """
     
