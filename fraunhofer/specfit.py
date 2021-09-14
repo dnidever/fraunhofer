@@ -809,7 +809,7 @@ def mkbounds(params,paramlims=None):
             g, = np.where(limkeys==f)
             if len(g)>0:
                 lbounds[i] = paramlims[limkeys[g[0]]][0]
-                bounds[i] = paramlims[limkeys[g[0]]][1]
+                ubounds[i] = paramlims[limkeys[g[0]]][1]
                 
     bounds = (lbounds,ubounds)
     return bounds
