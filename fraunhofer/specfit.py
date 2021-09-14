@@ -759,9 +759,11 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
     return pspec
 
 
-def mkbounds(params):
+def mkbounds(params,paramlims=None):
     """ Make lower and upper boundaries for parameters """
     params = np.char.array(params).upper()
+    if paramlims is not None: 
+        limkeys = np.char.array(list(paramlims.keys())).upper()
     n = len(params)
     lbounds = np.zeros(n,np.float64)
     ubounds = np.zeros(n,np.float64)    
@@ -801,6 +803,14 @@ def mkbounds(params):
         lbounds[g] = -3
         ubounds[g] = 10
 
+    # Use input parameter limits
+    if paramlims is not None:
+        for i,f in enumerate(params):
+            g, = np.where(limkeys==f)
+            if len(g)>0:
+                lbounds[i] = paramlims[limkeys[g[0]]][0]
+                bounds[i] = paramlims[limkeys[g[0]]][1]
+                
     bounds = (lbounds,ubounds)
     return bounds
 
@@ -827,7 +837,7 @@ def mkdxlim(fitparams):
     return dx_lim
 
     
-def initpars(params,fitparams):
+def initpars(params,fitparams,bounds=None):
     """ Make initial set of parameters given PARAMS and
         FITPARAMS."""
 
@@ -863,6 +873,11 @@ def initpars(params,fitparams):
             else:
                 pinit[k] = 0.0
 
+    # Make sure inital parameters are within the boundary limits
+    if bounds is not None:
+        for k in range(npars):
+            pinit[k] = dln.limit(pinit[k],bounds[0][k],bounds[1][k])
+    
     return pinit
 
 
@@ -1088,8 +1103,8 @@ def fit_elem(spec,params,elem,verbose=0,alinefile=None,mlinefile=None,logger=Non
     spfitter.logger = logger
     spfitter.norm = True  # normalize the synthetic spectrum
     #spfitter.verbose = True
-    pinit = initpars(params,elem)
     bounds = mkbounds(elem)
+    pinit = initpars(params,elem,bounds)
 
     # Initalize output
     npar = len(fitparams)
@@ -1199,7 +1214,7 @@ def fit_elem(spec,params,elem,verbose=0,alinefile=None,mlinefile=None,logger=Non
     return out, model
     
 
-def fit_lsq(spec,params,fitparams=None,verbose=0,alinefile=None,mlinefile=None,logger=None):
+def fit_lsq(spec,params,fitparams=None,fparamlims=None,verbose=0,alinefile=None,mlinefile=None,logger=None):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
     abundances using least-squares.
@@ -1213,6 +1228,8 @@ def fit_lsq(spec,params,fitparams=None,verbose=0,alinefile=None,mlinefile=None,l
     fitparams : list, optional
          List of parameter names to fit (e.g., TEFF, LOGG, FE_H, RV).  By default all values
          in PARAMS are fit.
+    fparamlims : dict, optional
+         Dictionary of lower and upper limits for each of the fitparams.
     verbose : int, optional
          Verbosity level (0, 1, or 2).  The default is 0 and verbose=2 is for debugging.
     alinefile : str, optional
@@ -1266,8 +1283,8 @@ def fit_lsq(spec,params,fitparams=None,verbose=0,alinefile=None,mlinefile=None,l
                           alinefile=alinefile,mlinefile=mlinefile)
     spfitter.logger = logger
     spfitter.norm = True  # normalize the synthetic spectrum
-    pinit = initpars(params,fitparams)
-    bounds = mkbounds(fitparams)
+    bounds = mkbounds(fitparams,fparamlims)
+    pinit = initpars(params,fitparams,bounds)
 
     if verbose>0:
         logger.info('Fitting: '+', '.join(fitparams))
@@ -1313,7 +1330,7 @@ def fit_lsq(spec,params,fitparams=None,verbose=0,alinefile=None,mlinefile=None,l
 
 
 def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
-        verbose=1,alinefile=None,mlinefile=None,logger=None):
+        fparamlims=None,verbose=1,alinefile=None,mlinefile=None,logger=None):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
     abundances using a multi-step iterative method.
@@ -1343,6 +1360,10 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
          Fit Vmicro.  Default is False.  By default, Vmicro is set (if not included in PARAMS)
          logg>=3.8:  vmicro = 2.0
          logg<3.8:   vmicro = 10^(0.226−0.0228*logg+0.0297*(logg)^2−0.0113*(logg)^3 )
+    fparamlims : dict, optional
+         Dictionary of lower and upper limits for each of the fitted parameter.
+         For example, if params is {'teff': 9000, 'logg': 4.00, 'rv': -16.124}, fparamlims
+         could be {'teff': [8000,10000], 'logg': [3.50,4.50], 'rv': [-20.124,-12.124]}.
     verbose : int, optional
          Verbosity level (0, 1, or 2).  The default is 0 and verbose=2 is for debugging.
     alinefile : str, optional
@@ -1494,7 +1515,7 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
     # Fit Vmicro as well if it's a dwarf
     if params3['LOGG']>3.8 or params3['TEFF']>8000 or fitvmicro is True:
         fitparams3.append('VMICRO')
-    out3, model3 = fit_lsq(spec,params3,fitparams3,verbose=verbose,
+    out3, model3 = fit_lsq(spec,params3,fitparams3,fparamlims,verbose=verbose,
                                     alinefile=alinefile,mlinefile=mlinefile,logger=logger)    
     # typically 9 min.
     
@@ -1564,7 +1585,7 @@ def fit(spec,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
         if 'VMICRO' in fitparams3 or fitvmicro is True:
             fitparams5.append('VMICRO')
         fitparams5 = fitparams5+list(np.char.array(elem)+'_H')
-        out5, model5 = fit_lsq(spec,params5,fitparams5,verbose=verbose,
+        out5, model5 = fit_lsq(spec,params5,fitparams5,fparamlims,verbose=verbose,
                                alinefile=alinefile,mlinefile=mlinefile,logger=logger)            
     else:
         out5 = out3
