@@ -24,6 +24,7 @@ if __name__ == "__main__":
     parser.add_argument('-e','--elem', type=str, nargs=1, default='', help='List of elements to fit, only for fit()')    
     parser.add_argument('-f','--fpars', type=str, nargs=1, default='', help='List of parameters to fit, only fit_lsq()')
     parser.add_argument('-i','--init', type=str, nargs=1, default='', help='Initial parameters to use')    
+    parser.add_argument('--flim', type=str, nargs=1, default='', help='Limits on fitted parameters')
     parser.add_argument('-o','--outfile', type=str, nargs=1, default='', help='Output filename')
     parser.add_argument('--figfile', type=str, nargs=1, default='', help='Figure filename')
     parser.add_argument('-d','--outdir', type=str, nargs=1, default='', help='Output directory')        
@@ -70,6 +71,13 @@ if __name__ == "__main__":
         fpars = list(np.char.array(fpars).upper())
     else:
         fpars = None
+    # Fitted parameter limits
+    flim = dlkn.first_el(args.flim)
+    if flim != '':
+        flim = flim.split(',')
+        fparamlims = list(np.char.array(flim).upper())
+    else:
+        fparamlims = None    
     # Initial parameter values dictionary
     init = dln.first_el(args.init)
     if init != '':
@@ -151,15 +159,16 @@ if __name__ == "__main__":
             if fpars is None:
                 out, model = specfit.fit(spec,params=params,elem=elem,
                                          fitvmicro=fitvmicro,fitvsini=fitvsini,
-                                         figfile=figfile,verbose=verbose,
+                                         figfile=figfile,fparamlims=fparamlims,
                                          alinefile=alinefile,mlinefile=mlinefile,
-                                         logger=logger)
+                                         logger=logger,verbose=verbose)
 
             # Run fit_lsq() directly
             else:
                 out, model = specfit.fit_lsq(spec,params,fitparams=fpars,
-                                             verbose=verbose,logger=logger,
-                                             alinefile=alinefile,mlinefile=mlinefile)
+                                             fparamlims=fparamlims,verbose=verbose,
+                                             alinefile=alinefile,mlinefile=mlinefile,
+                                             logger=logger)
             
             # Save the output
             if inpoutfile!='':
