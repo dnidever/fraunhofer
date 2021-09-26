@@ -17,6 +17,6 @@ setup(name='Fraunhofer',
                         'thecannon @ git+http://github.com/andycasey/AnniesLasso/master'],
       #requires=['numpy','astropy(>=4.0)','scipy'],
       #requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils','doppler','synple'],
-      dependency_links=['http://github.com/dnidever/doppler/tarball/master#egg=doppler','http://github.com/andycasey/AnniesLasso/tarball/master#egg=thecannon'],
+      dependency_links=['http://github.com/dnidever/doppler/tarball/master#egg=doppler','http://github.com/andycasey/AnniesLasso/tarball/master'],
       include_package_data=True,
 )
