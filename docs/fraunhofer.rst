@@ -20,15 +20,6 @@ fraunhofer.specfit module
    :undoc-members:
    :show-inheritance:
 
-fraunhofer.specfit\_mod module
-------------------------------
-
-.. automodule:: fraunhofer.specfit_mod
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-
 Module contents
 ---------------
 
