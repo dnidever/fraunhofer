@@ -2,4 +2,5 @@ numpy
 matplotlib
 astropy
 scipy
+git+https://github.com/dnidever/doppler.git
 git+https://github.com/dnidever/synple.git
