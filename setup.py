@@ -21,6 +21,6 @@ setup(name='Fraunhofer',
       #requires=['numpy','astropy(>=4.0)','scipy'],
       #requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils','doppler','synple'],
       #dependency_links=['http://github.com/dnidever/doppler/tarball/master#egg=doppler','http://github.com/andycasey/AnniesLasso/tarball/master#egg=thecannon'],
-      #dependency_links=['http://github.com/dnidever/doppler/tarball/master#egg=doppler'],      
+      dependency_links=['http://github.com/dnidever/doppler/tarball/v1.1.0#egg=doppler'],      
       include_package_data=True,
 )
