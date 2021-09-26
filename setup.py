@@ -13,7 +13,7 @@ setup(name='Fraunhofer',
       scripts=['bin/hofer'],
       #install_requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils(>=1.0.3)','doppler @ git+https://github.com/dnidever/doppler@master#egg=doppler',
       #                  'thecannon @ git+http://github.com/andycasey/AnniesLasso@master#egg=thecannon'],
-      install_requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils(>=1.0.3)','doppler @ git+https://github.com/dnidever/doppler@master#egg=doppler',]
+      install_requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils(>=1.0.3)','doppler @ git+https://github.com/dnidever/doppler@master#egg=doppler'],
       #requires=['numpy','astropy(>=4.0)','scipy'],
       #requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils','doppler','synple'],
       #dependency_links=['http://github.com/dnidever/doppler/tarball/master#egg=doppler','http://github.com/andycasey/AnniesLasso/tarball/master#egg=thecannon'],
