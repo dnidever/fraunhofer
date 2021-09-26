@@ -18,7 +18,8 @@ spectrum (using the `synple <https://github.com/callendeprieto/synpl>`_ python w
    :maxdepth: 1
 
    install
-   
+   modules
+	      
 
 Description
 ===========
@@ -78,6 +79,14 @@ Here are the various input arguments for command-line script `hofer`::
     -v [VERBOSE], --verbose [VERBOSE]
                           Verbosity level (0, 1, 2)
 
+*****
+Index
+*****
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
+			  
 .. rubric:: Footnotes
 
 .. [#f1] For `Joseph von Fraunhofer <https://en.wikipedia.org/wiki/Joseph_von_Fraunhofer>`_ who was a German physicist and the first one to systematically study the absorption lines in the Sun's spectrum.
