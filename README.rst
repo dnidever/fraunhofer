@@ -16,6 +16,17 @@ To install the latest version::
 
     pip install git+https://github.com/dnidever/fraunhofer
 
+
+Attribution
+-----------
+
+.. image:: https://zenodo.org/badge/278925530.svg
+   :target: https://zenodo.org/badge/latestdoi/278925530
+
+If you make use of this code, please cite this work using the DOI::
+
+    Nidever, D. L. 2021, dnidever/fraunhofer, doi:10.5281/zenodo.278925530
+    
 Documentation
 -------------
 
