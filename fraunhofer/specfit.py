@@ -567,7 +567,7 @@ def korg_wrapper(inputs,verbose=False,alinefile=None,mlinefile=None):
     import pdb; pdb.set_trace()
 
     # I think Korg needs MARCS models
-    # I can't get it to read the synspec linelists, it can do kurucz, vald, moog (src/linelists.jl)
+    # I can't get it to read the synspec linelists, it can do kurucz, vald, moog (src/linelist.jl)
 
     lines = Korg.read_linelist("/Users/nidever/projects/Korg.jl/misc/Tutorial notebooks/linelist.vald", format="vald")
     atm = Korg.read_model_atmosphere("/Users/nidever/projects/Korg.jl/misc/Tutorial notebooks/s6000_g+1.0_m0.5_t05_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod")
