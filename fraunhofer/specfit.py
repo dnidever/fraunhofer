@@ -808,6 +808,9 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
         wave = lsf.wave.copy()
     for o in range(lsf.norder):
         wobs = wave[:,o]
+        gdw, = np.where(wobs > 0)
+        wobs = wobs[gdw]
+        npix1 = len(gdw)
         dw = np.median(dln.slope(wobs))
         wv1,ind1 = dln.closest(synspec.wave,np.min(wobs)-2*np.abs(dw))
         wv2,ind2 = dln.closest(synspec.wave,np.max(wobs)+2*np.abs(dw))
@@ -817,7 +820,7 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
 
         # Rebin, if necessary
         #  get LSF FWHM (A) for a handful of positions across the spectrum
-        xp = np.arange(npix//20)*20
+        xp = np.arange(npix1//20)*20
         fwhm = lsf.fwhm(wobs[xp],xtype='Wave',order=o)
         # FWHM is in units of lsf.xtype, convert to wavelength/angstroms, if necessary
         if lsf.xtype.lower().find('pix')>-1:
@@ -834,7 +837,7 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
         
         if np.min(fwhmpix) < 3.7:
             warnings.warn('Model has lower resolution than the observed spectrum. Only '+str(np.min(fwhmpix))+' model pixels per resolution element')
-        if np.min(fwhmpix) < 2.8:
+        if np.min(fwhmpix) < 2.0:
             raise Exception('Model has lower resolution than the observed spectrum. Only '+str(np.min(fwhmpix))+' model pixels per resolution element')
         
         if nbin>1:
@@ -849,8 +852,10 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
         # Interpolate onto final wavelength array
         flux = synple.interp_spl(wobs, modelwave, cflux)
         cont = synple.interp_spl(wobs, modelwave, modelcont)
-        pspec.flux[:,o] = flux
-        pspec.cont[:,o] = cont        
+        pspec.flux[0:len(flux),o] = flux
+        pspec.cont[0:len(cont),o] = cont
+        if npix1 < npix:
+            pspec.mask[len(flux):,o] = True
         pspec.normalized = True
         
     # Normalize
