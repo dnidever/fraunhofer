@@ -4,7 +4,7 @@
 from setuptools import setup, find_packages
 
 setup(name='Fraunhofer',
-      version='1.0.1',
+      version='1.0.2',
       description='Generic Steller Abundance Determination Software',
       author='David Nidever',
       author_email='dnidever@montana.edu',
