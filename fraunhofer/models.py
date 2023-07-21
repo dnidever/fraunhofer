@@ -28,7 +28,7 @@ import copy
 import logging
 import time
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.legend import Legend
 
