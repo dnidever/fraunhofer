@@ -786,7 +786,7 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
             synspec.wavevac = True
         # Vacuum -> Air
         else:
-            synspec.dispersion = astro.vactoair(synspec.wave)
+            synspec.wave = astro.vactoair(synspec.wave)
             synspec.wavevac = False
         
     # Initialize the output spectrum
@@ -797,7 +797,9 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
         norder = 1
     pspec = Spec1D(np.zeros((npix,norder),np.float32),err=np.zeros((npix,norder),np.float32),
                    wave=lsf.wave,lsfpars=lsf.pars,lsftype=lsf.lsftype,lsfxtype=lsf.xtype)
-    pspec.cont = np.zeros((npix,norder),np.float32)
+    pspec._cont = np.zeros((npix,norder),np.float32)
+    if norder==1:
+        pspec._cont = np.squeeze(pspec._cont)
     if continuum_func is not None:
         pspec.continuum_func = continuum_func
         
@@ -852,17 +854,24 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
         # Interpolate onto final wavelength array
         flux = synple.interp_spl(wobs, modelwave, cflux)
         cont = synple.interp_spl(wobs, modelwave, modelcont)
-        pspec.flux[0:len(flux),o] = flux
-        pspec.cont[0:len(cont),o] = cont
+        if norder>1:
+            pspec.flux[0:len(flux),o] = flux
+            pspec.cont[0:len(cont),o] = cont
+        else:
+            pspec.flux[0:len(flux)] = flux
+            pspec.cont[0:len(cont)] = cont            
         if npix1 < npix:
-            pspec.mask[len(flux):,o] = True
+            if norder>1:
+                pspec.mask[len(flux):,o] = True
+            else:
+                pspec.mask[len(flux):] = True                
         pspec.normalized = True
         
     # Normalize
     if norm is True:
         newcont = pspec.continuum_func(pspec)
-        if newcont.ndim==1:
-            newcont = newcont.reshape(newcont.size,1)
+        #if newcont.ndim==1:
+        #    newcont = newcont.reshape(newcont.size,1)
         pspec.flux /= newcont
         pspec.cont *= newcont
         
