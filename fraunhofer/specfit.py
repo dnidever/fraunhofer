@@ -1736,7 +1736,7 @@ def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=Fal
 #   tmodel = Spec1D(model3,wave=spec.wave.copy(),lsfpars=np.array(0.0))        
 #   spec = doppler.rv.tweakcontinuum(spec,tmodel)
 
-    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
     
     
     # 4) Fit each element separately
@@ -1763,7 +1763,7 @@ def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=Fal
                 parselem[elem[k]+'_H'] = params4['FE_H']
             fitparselem = [elem[k]+'_H']
             #out4, model4 = fit_lsq(spec,parselem,fitparselem,verbose=verbose,logger=logger)
-            import pdb; pdb.set_trace()
+            #import pdb; pdb.set_trace()
             out4, model4, synspec4 = fit_elem(spec,parselem,fitparselem,verbose=verbose,
                                               alinefile=alinefile,mlinefile=mlinefile,logger=logger)            
             elemcat['par'][k] = out4['pars'][0]
