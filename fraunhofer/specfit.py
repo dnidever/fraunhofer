@@ -564,7 +564,7 @@ def korg_wrapper(inputs,verbose=False,alinefile=None,mlinefile=None):
     # Get the abundances
     abu = getabund(inputs,verbose=verbose)
 
-    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
 
     # I think Korg needs MARCS models
     # I can't get it to read the synspec linelists, it can do kurucz, vald, moog (src/linelist.jl)
@@ -637,7 +637,7 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     # Get the abundances
     abu = getabund(inputs,verbose=verbose)
 
-    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
     
     wave,flux,cont = synple.syn(modelfile,(w0,w1),dw,vmicro=vmicro,vrot=vrot,
                                 abu=list(abu),verbose=verbose,linelist=linelist)
