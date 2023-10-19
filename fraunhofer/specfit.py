@@ -525,7 +525,7 @@ def korg_wrapper(inputs,verbose=False,alinefile=None,mlinefile=None):
     """ This is a wrapper around Korg to generate a new synthetic spectrum."""
 
     # Linelists to use
-    linelist = ['gfallx3_bpo.19','kmol3_0.01_30.20']   # default values
+    linelist = ['gfATO.19.11','gfMOLsun.20.11','gfTiO.20.11','H2O-8.20.11']   # default values    
     if alinefile is not None:   # atomic linelist input
         linelist[0] = alinefile
     if mlinefile is not None:   # molecular linelist input
@@ -596,7 +596,7 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     os.chdir(tdir)
 
     # Linelists to use
-    linelist = ['gfallx3_bpo.19','kmol3_0.01_30.20']   # default values
+    linelist = ['gfATO.19.11','gfMOLsun.20.11','gfTiO.20.11','H2O-8.20.11']   # default values
     if alinefile is not None:   # atomic linelist input
         linelist[0] = alinefile
     if mlinefile is not None:   # molecular linelist input
