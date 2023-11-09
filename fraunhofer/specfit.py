@@ -437,7 +437,7 @@ def trim_spectrum(spec,w0,w1):
     if hasattr(outspec,'cont'):
         if outspec.cont is not None:
             outspec.cont = outspec.cont[ind1:ind2+1]        
-    outspec.npix = len(outspec.flux)
+    #outspec.npix = len(outspec.flux)
     return outspec
 
 
