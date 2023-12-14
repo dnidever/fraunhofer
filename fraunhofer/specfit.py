@@ -649,6 +649,91 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     return (wave,flux,cont)
 
 
+def synthe_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=None):
+    """ This is a wrapper around synthe to generate a new synthetic spectrum."""
+    from vidmapy.kurucz.atlas import Atlas
+    from vidmapy.kurucz.synthe import Synthe
+    from vidmapy.kurucz.parameters import Parameters
+    atlas_worker = Atlas()
+    synthe_worker = Synthe()
+
+    # Wavelengths are all AIR!!
+    
+    # inputs is a dictionary with all of the inputs
+    # Teff, logg, [Fe/H], some [X/Fe], and the wavelength parameters (w0, w1, dw).
+
+    ''' Drew not sure the below is needed '''    
+    # Make temporary directory for synple to work in
+    curdir = os.path.abspath(os.curdir) 
+    tdir = os.path.abspath(tempfile.mkdtemp(prefix="syn",dir=tmpbase))
+    os.chdir(tdir)
+
+    # Linelists to use
+    ''' Drew currently just feeding an atomic linelist to SYNTHE '''
+    #linelist = ['gfATO.19.11','gfMOLsun.20.11','gfTiO.20.11','H2O-8.20.11']   # default values
+    linelist = 'vald2kurucz_APOGEE.dat'   # default values
+    #if alinefile is not None:   # atomic linelist input
+    #    linelist[0] = alinefile
+    #if mlinefile is not None:   # molecular linelist input
+    #    linelist[1] = mlinefile
+
+    if verbose: print('Using linelist: ',linelist)
+        
+    # Make key names all CAPS
+    inputs = dict((key.upper(), value) for (key, value) in inputs.items())
+    
+    # Make the model atmosphere file
+    teff = inputs['TEFF']
+    logg = inputs['LOGG']
+    metal = inputs['FE_H']
+    vmicro = inputs.get('VMICRO')
+    model = atlas_worker.get_model(Parameters(teff=teff, logg=logg, metallicity=metal, microturbulence=2.0))
+
+    # Establish parameters for creating SYNTHE spectrum
+    w0 = inputs['W0']
+    w1 = inputs['W1']
+    dw = inputs['DW']
+    vmicro = inputs.get('VMICRO')
+    vrot = inputs.get('VROT')
+    if vrot is None: vrot = 0.0
+    # Get the abundances
+    abu = getabund(inputs,verbose=verbose)
+    ''' Abundances need to be in a dictionary format like the below example, in dex relative to Solar '''
+    ''' abu = {"Mg":0.30, "Al":0.35, "Si":0.35, "S":0.35, "Fe":0.10, "Ni":0.25, "Ce":1.50} '''
+
+    ''' unlike synple, resolving power is an input for synthe '''
+    ''' maybe this will be among the inputs? '''
+    resolution = inputs['R']
+    pars = Parameters(wave_min=w0, wave_max=w1, vsini=vrot, resolution=resolution)
+    pars.update_chemical_composition(abu, relative=True)
+
+    # Create the SYNTHE synthetic spectrum
+    sp = synthe_worker.get_spectrum(model, pars, linelist=linelist, quiet=True)
+
+    ''' Drew not sure what of the below is needed '''
+    tid,modelfile = tempfile.mkstemp(prefix="mod",dir=".")
+    os.close(tid)  # close the open file
+    # Limit values
+    #  of course the logg/feh ranges vary with Teff
+    mteff = dln.limit(teff,3500.0,60000.0)
+    mlogg = dln.limit(logg,0.0,5.0)
+    mmetal = dln.limit(metal,-2.5,0.5)
+    model, header, tail = models.mkmodel(mteff,mlogg,mmetal,modelfile)
+    inputs['modelfile'] = modelfile
+    if os.path.exists(modelfile) is False or os.stat(modelfile).st_size==0:
+        print('model atmosphere file does NOT exist')
+        import pdb; pdb.set_trace()
+    
+    #wave,flux,cont = synple.syn(modelfile,(w0,w1),dw,vmicro=vmicro,vrot=vrot,
+    #                            abu=list(abu),verbose=verbose,linelist=linelist)
+    
+    # Delete temporary files
+    shutil.rmtree(tdir)
+    os.chdir(curdir)
+    
+    return (sp.wave,sp.flux,sp.continuum)
+
+
 def smoothshift_spectrum(inpspec,vmicro=None,vrot=None,rv=None):
     """ This smoothes the spectrum by Vrot+Vmicro and
         shifts it by RV."""
@@ -1752,7 +1837,7 @@ def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=Fal
     if nelem>0:
         if verbose>0:
             logger.info('Elements: '+', '.join(elem))    
-        elemcat = np.zeros(nelem,dtype=np.dtype([('name',np.str,10),('par',np.float64),('parerr',np.float64)]))
+        elemcat = np.zeros(nelem,dtype=np.dtype([('name',str,10),('par',np.float64),('parerr',np.float64)]))
         elemcat['name'] = elem
         for k in range(nelem):
             t4b = time.time()
