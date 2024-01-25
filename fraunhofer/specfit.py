@@ -123,8 +123,8 @@ class SpecFitter:
         self.mlinefile = mlinefile
         # Type of synthesis (synple or korg)
         self.synthtype = str(synthtype).lower()
-        if self.synthtype not in ['synple','korg']:
-            raise ValueError("synthtype must be 'synple' or 'korg'")
+        if self.synthtype not in ['synple','korg','synthe']:
+            raise ValueError("synthtype must be 'synple', 'korg', or 'synthe'")
         # Load Julia stuff
         if self.synthtype=='korg':
             print('Loading Julia.  This will take a minute')
@@ -212,7 +212,7 @@ class SpecFitter:
         if self.verbose:
             print(inputs)
         # Create the synthetic spectrum
-        synspec = model_spectrum(inputs,verbose=self.verbose,   # always returns air wavelengths
+        synspec = model_spectrum(inputs,verbose=self.verbose,synthtype=self.synthtype,   # always returns air wavelengths
                                  alinefile=self.alinefile,mlinefile=self.mlinefile)
         self.nsynfev += 1
         # Convolve with the LSF and do air/vacuum wave conversion
@@ -317,18 +317,23 @@ class SpecFitter:
         tinputs['VMICRO'] = 0
         tinputs['VROT'] = 0
         tinputs['RV'] = 0
-        origspec = model_spectrum(tinputs,keepextend=True,  # always are wavelengths
+        origspec = model_spectrum(tinputs,keepextend=True,synthtype=self.synthtype,  # always are wavelengths
                                   alinefile=self.alinefile,mlinefile=self.mlinefile)
         self.nsynfev += 1
+
         # Smooth and shift
         smorigspec = smoothshift_spectrum(origspec,vrot=vrot,vmicro=vmicro,rv=rv)
+
         # Trim to final wavelengths
         smorigspec = trim_spectrum(smorigspec,w0,w1)
+
         # Convolve with the LSF and do air/vacuum wave conversion
         pspec = prepare_synthspec(smorigspec,self.lsf,norm=self.norm,
                                   continuum_func=self.continuum_func)
+
         # Flatten the spectrum
         f0 = pspec.flux.flatten()
+
         # Save models/pars/chisq
         modeldict = {}
         modeldict['args'] = list(args).copy()
@@ -371,13 +376,12 @@ class SpecFitter:
                 tvrot = tinputs.get('VROT')
                 tvmicro = tinputs.get('VMICRO')
                 trv = tinputs.get('RV')
-                #import pdb; pdb.set_trace()                
                 # Smooth and shift
                 synspec = smoothshift_spectrum(origspec,vrot=tvrot,vmicro=tvmicro,rv=trv)
                 # Trim to final wavelengths
                 synspec = trim_spectrum(synspec,w0,w1)
             else:
-                synspec = model_spectrum(tinputs,alinefile=self.alinefile,
+                synspec = model_spectrum(tinputs,synthtype=self.synthtype,alinefile=self.alinefile,
                                          mlinefile=self.mlinefile)  # always returns air wavelengths
                 self.nsynfev += 1
                 
@@ -441,7 +445,7 @@ def trim_spectrum(spec,w0,w1):
     return outspec
 
 
-def getabund(inputs,verbose=False):
+def getabund(inputs,synthtype='synple',verbose=False):
     """ Grab the abundances out of the input file and return array of abundances."""
     
     # Create the input 99-element abundance array
@@ -463,28 +467,30 @@ def getabund(inputs,verbose=False):
 
     # solar abundances
     # first two are Teff and logg
-    # last two are Hydrogen and Helium
+    # last two are Hydrogen and Helium (not true?)
+    # Drew Update 01/08/2024: updating the solar abundances according to Asplund et al. 2021
+    # https://ui.adsabs.harvard.edu/abs/2021A%26A...653A.141A/abstract
     solar_abund = np.array([ 4750., 2.5, 
-                            -10.99, -10.66,  -9.34,  -3.61,  -4.21,
-                            -3.35,  -7.48,  -4.11,  -5.80,  -4.44,
-                            -5.59,  -4.53,  -6.63,  -4.92,  -6.54,
-                            -5.64,  -7.01,  -5.70,  -8.89,  -7.09,
-                            -8.11,  -6.40,  -6.61,  -4.54,  -7.05,
-                            -5.82,  -7.85,  -7.48,  -9.00,  -8.39,
-                            -9.74,  -8.70,  -9.50,  -8.79,  -9.52,
-                            -9.17,  -9.83,  -9.46, -10.58, -10.16,
-                           -20.00, -10.29, -11.13, -10.47, -11.10,
-                           -10.33, -11.24, -10.00, -11.03,  -9.86,
-                           -10.49,  -9.80, -10.96,  -9.86, -10.94,
-                           -10.46, -11.32, -10.62, -20.00, -11.08,
-                           -11.52, -10.97, -11.74, -10.94, -11.56,
-                           -11.12, -11.94, -11.20, -11.94, -11.19,
-                           -12.16, -11.19, -11.78, -10.64, -10.66,
-                           -10.42, -11.12, -10.87, -11.14, -10.29,
-                           -11.39, -20.00, -20.00, -20.00, -20.00,
-                           -20.00, -20.00, -12.02, -20.00, -12.58,
-                           -20.00, -20.00, -20.00, -20.00, -20.00,
-                           -20.00, -20.00])
+                            -11.04, -10.62,  -9.30,  -3.54,  -4.17,
+                             -3.31,  -7.60,  -3.94,  -5.78,  -4.45,
+                             -5.57,  -4.49,  -6.59,  -4.88,  -6.69,
+                             -5.62,  -6.93,  -5.70,  -8.86,  -7.03,
+                             -8.10,  -6.38,  -6.58,  -4.54,  -7.06,
+                             -5.80,  -7.82,  -7.44,  -8.98,  -8.38,
+                             -9.70,  -8.66,  -9.46,  -8.88,  -9.68,
+                             -9.17,  -9.79,  -9.41, -10.53, -10.12,
+                            -20.00, -10.25, -11.22, -10.43, -11.04,
+                            -10.29, -11.20,  -9.98, -10.99,  -9.82,
+                            -10.45,  -9.78, -10.92,  -9.73, -10.89,
+                            -10.42, -11.25, -10.58, -20.00, -11.05,
+                            -11.48, -10.92, -11.69, -10.90, -11.52,
+                            -11.07, -11.89, -11.15, -11.90, -11.15,
+                            -12.15, -11.21, -11.74, -10.65, -10.68,
+                            -10.39, -11.09, -10.83, -11.08, -10.05,
+                            -11.35, -20.00, -20.00, -20.00, -20.00,
+                            -20.00, -20.00, -11.97, -20.00, -12.54,
+                            -20.00, -20.00, -20.00, -20.00, -20.00,
+                            -20.00, -20.00])
 
     # Deal with alpha abundances
     #  only add the individual alpha abundance if it's not already there
@@ -496,7 +502,7 @@ def getabund(inputs,verbose=False):
         for k in range(len(elem)):
             if inputs.get(elem[k]+'_H') is None:
                 inputs[elem[k]+'_H'] = alpha
-    
+
     # Scale global metallicity
     abu = solar_abund.copy()
     abu[2:] += feh
@@ -510,6 +516,16 @@ def getabund(inputs,verbose=False):
             abu[ind2[k]] += float(inputs[key1]) - feh
             if verbose:
                 print('%s %f' % (key1,float(inputs[key1])))
+
+    # for SYNTHE, just go ahead and return the abu array reformatted to dictionary
+    if synthtype == 'synthe': 
+        abu = abu[2:]
+        abuG = {}
+        for i in range(len(abu)):
+            abuG[pertab['symbol'][2+i]] = abu[i]
+        #import pdb; pdb.set_trace()
+        return abuG
+
     # convert to linear
     abu[2:] = 10**abu[2:]
     # Divide by N(H)
@@ -641,7 +657,7 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     
     wave,flux,cont = synple.syn(modelfile,(w0,w1),dw,vmicro=vmicro,vrot=vrot,
                                 abu=list(abu),verbose=verbose,linelist=linelist)
-    
+
     # Delete temporary files
     shutil.rmtree(tdir)
     os.chdir(curdir)
@@ -662,16 +678,15 @@ def synthe_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     # inputs is a dictionary with all of the inputs
     # Teff, logg, [Fe/H], some [X/Fe], and the wavelength parameters (w0, w1, dw).
 
-    ''' Drew not sure the below is needed '''    
-    # Make temporary directory for synple to work in
+    # Make temporary directory for synthe to work in
     curdir = os.path.abspath(os.curdir) 
-    tdir = os.path.abspath(tempfile.mkdtemp(prefix="syn",dir=tmpbase))
+    tdir = os.path.abspath(tempfile.mkdtemp(prefix="synthe",dir=tmpbase))
     os.chdir(tdir)
 
     # Linelists to use
     ''' Drew currently just feeding an atomic linelist to SYNTHE '''
     #linelist = ['gfATO.19.11','gfMOLsun.20.11','gfTiO.20.11','H2O-8.20.11']   # default values
-    linelist = 'vald2kurucz_APOGEE.dat'   # default values
+    linelist = 'vald2kurucz_APOGEE.dat'#vald2kurucz_APOGEE.dat'   # default values
     #if alinefile is not None:   # atomic linelist input
     #    linelist[0] = alinefile
     #if mlinefile is not None:   # molecular linelist input
@@ -687,7 +702,7 @@ def synthe_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     logg = inputs['LOGG']
     metal = inputs['FE_H']
     vmicro = inputs.get('VMICRO')
-    model = atlas_worker.get_model(Parameters(teff=teff, logg=logg, metallicity=metal, microturbulence=2.0))
+    model = atlas_worker.get_model(Parameters(teff=teff, logg=logg, metallicity=metal, microturbulence=vmicro))
 
     # Establish parameters for creating SYNTHE spectrum
     w0 = inputs['W0']
@@ -696,42 +711,59 @@ def synthe_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     vmicro = inputs.get('VMICRO')
     vrot = inputs.get('VROT')
     if vrot is None: vrot = 0.0
-    # Get the abundances
-    abu = getabund(inputs,verbose=verbose)
-    ''' Abundances need to be in a dictionary format like the below example, in dex relative to Solar '''
-    ''' abu = {"Mg":0.30, "Al":0.35, "Si":0.35, "S":0.35, "Fe":0.10, "Ni":0.25, "Ce":1.50} '''
 
-    ''' unlike synple, resolving power is an input for synthe '''
-    ''' maybe this will be among the inputs? '''
-    resolution = inputs['R']
-    pars = Parameters(wave_min=w0, wave_max=w1, vsini=vrot, resolution=resolution)
-    pars.update_chemical_composition(abu, relative=True)
-
-    # Create the SYNTHE synthetic spectrum
-    sp = synthe_worker.get_spectrum(model, pars, linelist=linelist, quiet=True)
-
-    ''' Drew not sure what of the below is needed '''
     tid,modelfile = tempfile.mkstemp(prefix="mod",dir=".")
     os.close(tid)  # close the open file
+    model.save_model(modelfile)
+
+    ''' Drew not sure what of the below is needed '''
     # Limit values
     #  of course the logg/feh ranges vary with Teff
-    mteff = dln.limit(teff,3500.0,60000.0)
-    mlogg = dln.limit(logg,0.0,5.0)
-    mmetal = dln.limit(metal,-2.5,0.5)
-    model, header, tail = models.mkmodel(mteff,mlogg,mmetal,modelfile)
+    #mteff = dln.limit(teff,3500.0,60000.0)
+    #mlogg = dln.limit(logg,0.0,5.0)
+    #mmetal = dln.limit(metal,-2.5,0.5)
+    #model, header, tail = models.mkmodel(mteff,mlogg,mmetal,modelfile)
     inputs['modelfile'] = modelfile
     if os.path.exists(modelfile) is False or os.stat(modelfile).st_size==0:
         print('model atmosphere file does NOT exist')
         import pdb; pdb.set_trace()
+
+    # Get the abundances
+    abu = getabund(inputs,synthtype='synthe',verbose=verbose)
+
+    ''' Abundances need to be in a dictionary format like the below example, in dex relative to Solar '''
+    ''' abu = {"Mg":0.30, "Al":0.35, "Si":0.35, "S":0.35, "Fe":0.10, "Ni":0.25, "Ce":1.50} '''
+
+
+    ''' unlike synple, resolving power is an input for synthe '''
+    ''' maybe this will be among the inputs? Hard-code to APOGEE value for now. '''
+    resolution = 22500 #inputs['R']
+    pars = Parameters(wave_min=w0, wave_max=w1, vsini=vrot, resolution=resolution)
+    pars.update_chemical_composition(abu)#, relative=True)
     
-    #wave,flux,cont = synple.syn(modelfile,(w0,w1),dw,vmicro=vmicro,vrot=vrot,
-    #                            abu=list(abu),verbose=verbose,linelist=linelist)
-    
+    # Create the SYNTHE synthetic spectrum
+    sp = synthe_worker.get_spectrum(model, pars, quiet=True, linelist=linelist)
     # Delete temporary files
     shutil.rmtree(tdir)
     os.chdir(curdir)
-    
-    return (sp.wave,sp.flux,sp.continuum)
+
+    ''' decrease the number of synthetic spectrum elements since prepare_synthspec otherwise fails'''
+    delw = np.abs(sp.wave[1]-sp.wave[0])
+    if dw/delw > 2:
+        # the dispersion varies slowly with wavelength, just rebin
+        nbin = int(np.floor(dw/delw))
+        wave = dln.rebin(sp.wave,binsize=nbin)
+        flux = dln.rebin(sp.flux,binsize=nbin)
+        cont = dln.rebin(sp.continuum,binsize=nbin)
+        #wave = np.linspace(np.min(sp.wave), np.max(sp.wave), 12000)
+        #flux = np.interp(wave, sp.wave, sp.flux)
+        #cont = np.interp(wave, sp.wave, sp.continuum)
+    else:
+        wave = sp.wave
+        flux = sp.wave
+        cont = sp.continuum
+        
+    return (wave,flux,cont)
 
 
 def smoothshift_spectrum(inpspec,vmicro=None,vrot=None,rv=None):
@@ -789,7 +821,7 @@ def smoothshift_spectrum(inpspec,vmicro=None,vrot=None,rv=None):
     return spec
 
 
-def model_spectrum(inputs,verbose=False,keepextend=False,alinefile=None,mlinefile=None):
+def model_spectrum(inputs,verbose=False,synthtype='synple',keepextend=False,alinefile=None,mlinefile=None):
     """
     This creates a model spectrum given the inputs:
     RV, Teff, logg, vmicro, vsini, [Fe/H], [X/Fe], w0, w1, dw.
@@ -802,6 +834,8 @@ def model_spectrum(inputs,verbose=False,keepextend=False,alinefile=None,mlinefil
     ----------
     inputs : dictionary
        Input parameters, stellar parameters, abundances.
+    synthtype : str, optional
+       Choice between using synple, korg, or synthe. Default is synple.
     keepextend : bool, optional
        Keep the extensions on the ends.  Default is False.
     alinefile : str, optional
@@ -840,8 +874,15 @@ def model_spectrum(inputs,verbose=False,keepextend=False,alinefile=None,mlinefil
     #  set vrot=vmicro=0, will convolve later if necessary
     inputsext['VMICRO'] = 0
     inputsext['VROT'] = 0
-    wave1,flux1,cont1 = synple_wrapper(inputsext,verbose=verbose,alinefile=alinefile,
-                                       mlinefile=mlinefile)
+    if synthtype == 'synple':
+        wave1,flux1,cont1 = synple_wrapper(inputsext,verbose=verbose,alinefile=alinefile,
+                                           mlinefile=mlinefile)
+    if synthtype == 'korg':
+        wave1,flux1,cont1 = korg_wrapper(inputsext,verbose=verbose,alinefile=alinefile,
+                                         mlinefile=mlinefile)
+    if synthtype == 'synthe':
+        wave1,flux1,cont1 = synthe_wrapper(inputsext,verbose=verbose,alinefile=alinefile,
+                                           mlinefile=mlinefile)
     
     # Get final wavelength array
     wv1, ind1 = dln.closest(wave1,w0)
@@ -887,7 +928,7 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
         pspec._cont = np.squeeze(pspec._cont)
     if continuum_func is not None:
         pspec.continuum_func = continuum_func
-        
+
     # Loop over orders
     if lsf.wave.ndim==1:
         wave = np.atleast_2d(lsf.wave.copy()).T
@@ -951,7 +992,7 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
             else:
                 pspec.mask[len(flux):] = True                
         pspec.normalized = True
-        
+
     # Normalize
     if norm is True:
         newcont = pspec.continuum_func(pspec)
@@ -959,7 +1000,7 @@ def prepare_synthspec(synspec,lsf,norm=True,continuum_func=None):
         #    newcont = newcont.reshape(newcont.size,1)
         pspec.flux /= newcont
         pspec.cont *= newcont
-        
+
     return pspec
 
 
@@ -1288,7 +1329,7 @@ def dopvrot_lsq(spec,models=None,initpar=None,verbose=False,logger=None):
     return out, lsmodel
 
 
-def fit_elem(spec,params,elem,verbose=0,alinefile=None,mlinefile=None,logger=None):
+def fit_elem(spec,params,elem,synthtype='synple',verbose=0,alinefile=None,mlinefile=None,logger=None):
     """
     Fit an individual element.
 
@@ -1300,6 +1341,8 @@ def fit_elem(spec,params,elem,verbose=0,alinefile=None,mlinefile=None,logger=Non
          Dictionary of initial values to use or parameters/elements to hold fixed.
     elem : str
          Name of element to fit.
+    synthtype : string
+         The type of synthetic spectra to compute ('synple', 'korg', 'synthe'). Default is synple.
     verbose : int, optional
          Verbosity level (0, 1, or 2).  The default is 0 and verbose=2 is for debugging.
     alinefile : str, optional
@@ -1343,7 +1386,7 @@ def fit_elem(spec,params,elem,verbose=0,alinefile=None,mlinefile=None,logger=Non
         logger.info('Fitting: '+', '.join(fitparams))
     
     # Initialize the fitter
-    spfitter = SpecFitter(spec,params,fitparams=fitparams,verbose=(verbose>=2),
+    spfitter = SpecFitter(spec,params,fitparams=fitparams,synthtype=synthtype,verbose=(verbose>=2),
                           alinefile=alinefile,mlinefile=mlinefile)
     spfitter.logger = logger
     spfitter.norm = True  # normalize the synthetic spectrum
@@ -1470,7 +1513,7 @@ def fit_elem(spec,params,elem,verbose=0,alinefile=None,mlinefile=None,logger=Non
     return out, model, synspec
     
 
-def fit_lsq(spec,params,fitparams=None,fparamlims=None,verbose=0,alinefile=None,mlinefile=None,logger=None):
+def fit_lsq(spec,params,fitparams=None,fparamlims=None,synthtype='synple',verbose=0,alinefile=None,mlinefile=None,logger=None):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
     abundances using least-squares.
@@ -1486,6 +1529,8 @@ def fit_lsq(spec,params,fitparams=None,fparamlims=None,verbose=0,alinefile=None,
          in PARAMS are fit.
     fparamlims : dict, optional
          Dictionary of lower and upper limits for each of the fitparams.
+    synthtype : string
+         The type of synthetic spectra to compute ('synple', 'korg', 'synthe'). Default is synple.
     verbose : int, optional
          Verbosity level (0, 1, or 2).  The default is 0 and verbose=2 is for debugging.
     alinefile : str, optional
@@ -1542,7 +1587,7 @@ def fit_lsq(spec,params,fitparams=None,fparamlims=None,verbose=0,alinefile=None,
     npar = len(fitparams)
     
     # Initialize the fitter
-    spfitter = SpecFitter(spec,params,fitparams=fitparams,verbose=(verbose>=2),
+    spfitter = SpecFitter(spec,params,fitparams=fitparams,synthtype=synthtype,verbose=(verbose>=2),
                           alinefile=alinefile,mlinefile=mlinefile)
     spfitter.logger = logger
     spfitter.norm = True  # normalize the synthetic spectrum
@@ -1602,8 +1647,8 @@ def fit_lsq(spec,params,fitparams=None,fparamlims=None,verbose=0,alinefile=None,
     return out, model, synspec
 
 
-def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=False,
-        fparamlims=None,verbose=1,alinefile=None,mlinefile=None,logger=None):
+def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppler=False,fitvsini=False,fitvmicro=False,
+        fitfeh=True,fitalphah=True,fparamlims=None,verbose=1,alinefile=None,mlinefile=None,logger=None):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
     abundances using a multi-step iterative method.
@@ -1618,6 +1663,8 @@ def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=Fal
     ----------
     spectrum : Spec1D object
          The observed spectrum to match.
+    synthtype : string, optional
+         The type of synthetic spectra to compute ('synple', 'korg', 'synthe'). Default is synple.
     params : dict, optional
          Dictionary of initial values to use or parameters/elements to hold fixed.
     elem : list, optional
@@ -1633,6 +1680,10 @@ def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=Fal
          Fit Vmicro.  Default is False.  By default, Vmicro is set (if not included in PARAMS)
          logg>=3.8:  vmicro = 2.0
          logg<3.8:   vmicro = 10^(0.226−0.0228*logg+0.0297*(logg)^2−0.0113*(logg)^3 )
+    fitfeh :  bool, optional
+         Fit [Fe/H]. Default is True.
+    fitalphah :  bool, optional
+         Fit [alpha/H]. Default is True.
     fparamlims : dict, optional
          Dictionary of lower and upper limits for each of the fitted parameter.
          For example, if params is {'teff': 9000, 'logg': 4.00, 'rv': -16.124}, fparamlims
@@ -1645,6 +1696,8 @@ def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=Fal
          The molecular linelist to use.  Default is None which means the default synple linelist is used.
     logger : logging object, optional
          Logging object.
+    skipdoppler : bool, optional
+         Option to skip Doppler steps 1 and 2 and go directly to step 3
 
     Returns
     -------
@@ -1712,67 +1765,68 @@ def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=Fal
         logger.info('Using input molecular linelist: ',mlinefile)
         
 
-    # 1) Doppler (Teff, logg, feh, RV)
-    #---------------------------------
-    t1 = time.time()
-    if verbose>0:
-        logger.info('Step 1: Running Doppler')        
-    # Use Doppler to get initial guess of stellar parameters and RV
-    dopout, dopfmodel, dopspecm = doppler.fit(spec)
-    origspec = spec.copy()
-    spec = dopspecm
-    # Use masked spectrum from Doppler from now on
-    if verbose>0:
-        logger.info('Teff = %.2f +/- %.2f' % (dopout['teff'][0],dopout['tefferr'][0]))
-        logger.info('logg = %.3f +/- %.3f' % (dopout['logg'][0],dopout['loggerr'][0]))
-        logger.info('[Fe/H] = %.3f +/- %.3f' % (dopout['feh'][0],dopout['feherr'][0]))
-        logger.info('Vrel = %.4f +/- %.4f' % (dopout['vrel'][0],dopout['vrelerr'][0]))
-        logger.info('chisq = %.3f' % dopout['chisq'][0])
-        logger.info('dt = %.2f sec.' % (time.time()-t1))
-        # typically 5 sec
-    
-
-    # 2) Fit vsini as well with Doppler model
-    #-----------------------------------------
-    t2 = time.time()    
-    if verbose>0:
-        logger.info(' ')    
-        logger.info('Step 2: Fitting vsini with Doppler model')
-    # For APOGEE resolution you need vsini~4 km/s or greater to see an effect
-    initpar2 = [dopout['teff'][0], dopout['logg'][0], dopout['feh'][0], dopout['vrel'][0], 5.0]
-    try:
-        out2, model2 = dopvrot_lsq(spec,initpar=initpar2,verbose=verbose,logger=logger)
+    if skipdoppler is False:
+        # 1) Doppler (Teff, logg, feh, RV)
+        #---------------------------------
+        t1 = time.time()
         if verbose>0:
-            logger.info('Teff = %.2f +/- %.2f' % (out2['pars'][0][0],out2['parerr'][0][0]))
-            logger.info('logg = %.3f +/- %.3f' % (out2['pars'][0][1],out2['parerr'][0][1]))
-            logger.info('[Fe/H] = %.3f +/- %.3f' % (out2['pars'][0][2],out2['parerr'][0][2]))
-            logger.info('Vrel = %.4f +/- %.4f' % (out2['pars'][0][3],out2['parerr'][0][3]))
-            logger.info('Vsini = %.3f +/- %.3f' % (out2['pars'][0][4],out2['parerr'][0][4]))
-            logger.info('chisq = %.3f' % out2['chisq'][0])
-            logger.info('dt = %.2f sec.' % (time.time()-t2))
+            logger.info('Step 1: Running Doppler')        
+        # Use Doppler to get initial guess of stellar parameters and RV
+        dopout, dopfmodel, dopspecm = doppler.fit(spec)
+        origspec = spec.copy()
+        spec = dopspecm
+        # Use masked spectrum from Doppler from now on
+        if verbose>0:
+            logger.info('Teff = %.2f +/- %.2f' % (dopout['teff'][0],dopout['tefferr'][0]))
+            logger.info('logg = %.3f +/- %.3f' % (dopout['logg'][0],dopout['loggerr'][0]))
+            logger.info('[Fe/H] = %.3f +/- %.3f' % (dopout['feh'][0],dopout['feherr'][0]))
+            logger.info('Vrel = %.4f +/- %.4f' % (dopout['vrel'][0],dopout['vrelerr'][0]))
+            logger.info('chisq = %.3f' % dopout['chisq'][0])
+            logger.info('dt = %.2f sec.' % (time.time()-t1))
             # typically 5 sec
-        if out2['chisq'][0] > dopout['chisq'][0]:
+        
+
+        # 2) Fit vsini as well with Doppler model
+        #-----------------------------------------
+        t2 = time.time()    
+        if verbose>0:
+            logger.info(' ')    
+            logger.info('Step 2: Fitting vsini with Doppler model')
+        # For APOGEE resolution you need vsini~4 km/s or greater to see an effect
+        initpar2 = [dopout['teff'][0], dopout['logg'][0], dopout['feh'][0], dopout['vrel'][0], 5.0]
+        try:
+            out2, model2 = dopvrot_lsq(spec,initpar=initpar2,verbose=verbose,logger=logger)
             if verbose>0:
-                logger.info('Doppler Vrot=0 chisq is better')
-            out2['pars'][0] = [dopout['teff'][0],dopout['logg'][0],dopout['feh'][0],dopout['vrel'][0],0.0]
-    except:
-        logger.info('dopvrot_lsq failed.  Using Vrot=0 results')
-        dtype = np.dtype([('pars',float,5),('parerr',float,5),('chisq',float)])
-        out2 = np.zeros(1,dtype=dtype)
-        out2['pars'] = [dopout['teff'][0],dopout['logg'][0],dopout['feh'][0],dopout['vrel'][0],0.0]
-        out2['parerr'] = [dopout['tefferr'][0],dopout['loggerr'][0],dopout['feherr'][0],dopout['vrelerr'][0],0.0]        
-        out2['chisq'] = dopout['chisq'][0]
-            
-    
-    # Initialize params
-    if params is None:
-        params = {}
-    else:
-        params = dict((key.upper(), value) for (key, value) in params.items())  # all CAPS
-    # Using input values when possible, otherwise Doppler values
-    for k,name in enumerate(['TEFF','LOGG','FE_H','RV','VROT']):
-        if params.get(name) is None:
-            params[name] = out2['pars'][0][k]
+                logger.info('Teff = %.2f +/- %.2f' % (out2['pars'][0][0],out2['parerr'][0][0]))
+                logger.info('logg = %.3f +/- %.3f' % (out2['pars'][0][1],out2['parerr'][0][1]))
+                logger.info('[Fe/H] = %.3f +/- %.3f' % (out2['pars'][0][2],out2['parerr'][0][2]))
+                logger.info('Vrel = %.4f +/- %.4f' % (out2['pars'][0][3],out2['parerr'][0][3]))
+                logger.info('Vsini = %.3f +/- %.3f' % (out2['pars'][0][4],out2['parerr'][0][4]))
+                logger.info('chisq = %.3f' % out2['chisq'][0])
+                logger.info('dt = %.2f sec.' % (time.time()-t2))
+                # typically 5 sec
+            if out2['chisq'][0] > dopout['chisq'][0]:
+                if verbose>0:
+                    logger.info('Doppler Vrot=0 chisq is better')
+                out2['pars'][0] = [dopout['teff'][0],dopout['logg'][0],dopout['feh'][0],dopout['vrel'][0],0.0]
+        except:
+            logger.info('dopvrot_lsq failed.  Using Vrot=0 results')
+            dtype = np.dtype([('pars',float,5),('parerr',float,5),('chisq',float)])
+            out2 = np.zeros(1,dtype=dtype)
+            out2['pars'] = [dopout['teff'][0],dopout['logg'][0],dopout['feh'][0],dopout['vrel'][0],0.0]
+            out2['parerr'] = [dopout['tefferr'][0],dopout['loggerr'][0],dopout['feherr'][0],dopout['vrelerr'][0],0.0]        
+            out2['chisq'] = dopout['chisq'][0]
+                
+        
+        # Initialize params
+        if params is None:
+            params = {}
+        else:
+            params = dict((key.upper(), value) for (key, value) in params.items())  # all CAPS
+        # Using input values when possible, otherwise Doppler values
+        for k,name in enumerate(['TEFF','LOGG','FE_H','RV','VROT']):
+            if params.get(name) is None:
+                params[name] = out2['pars'][0][k]
 
 
     # Get Vmicro using Teff/logg relation
@@ -1802,12 +1856,14 @@ def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=Fal
         logger.info('Step 3: Fitting stellar parameters, RV and broadening')
     params3 = params.copy()
     fitparams3 = ['TEFF','LOGG','FE_H','ALPHA_H','RV']    
+    if fitfeh is False: fitparams3 = ['TEFF','LOGG','ALPHA_H','RV']    
+    if fitalphah is False: fitparams3 = ['TEFF','LOGG','RV']    
     if params3['VROT']>0 or fitvsini is True:
         fitparams3.append('VROT')
     # Fit Vmicro as well if it's a dwarf
     if params3['LOGG']>3.8 or params3['TEFF']>8000 or fitvmicro is True:
         fitparams3.append('VMICRO')
-    out3, model3, synspec3 = fit_lsq(spec,params3,fitparams3,fparamlims,verbose=verbose,
+    out3, model3, synspec3 = fit_lsq(spec,params3,fitparams3,fparamlims,synthtype=synthtype,verbose=verbose,
                                      alinefile=alinefile,mlinefile=mlinefile,logger=logger)    
     # typically 9 min.
     
@@ -1837,19 +1893,19 @@ def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=Fal
     if nelem>0:
         if verbose>0:
             logger.info('Elements: '+', '.join(elem))    
-        elemcat = np.zeros(nelem,dtype=np.dtype([('name',str,10),('par',np.float64),('parerr',np.float64)]))
+        elemcat = np.zeros(nelem,dtype=np.dtype([('name',np.str_,10),('par',np.float64),('parerr',np.float64)]))
         elemcat['name'] = elem
         for k in range(nelem):
             t4b = time.time()
             parselem = params4.copy()
             if elem[k] in ['O','MG','SI','S','CA','TI']:
-                parselem[elem[k]+'_H'] = params4['ALPHA_H']
+                if fitalphah is True: parselem[elem[k]+'_H'] = params4['ALPHA_H']
             else:
-                parselem[elem[k]+'_H'] = params4['FE_H']
+                if fitfeh is True: parselem[elem[k]+'_H'] = params4['FE_H']
             fitparselem = [elem[k]+'_H']
             #out4, model4 = fit_lsq(spec,parselem,fitparselem,verbose=verbose,logger=logger)
             #import pdb; pdb.set_trace()
-            out4, model4, synspec4 = fit_elem(spec,parselem,fitparselem,verbose=verbose,
+            out4, model4, synspec4 = fit_elem(spec,parselem,fitparselem,synthtype=synthtype,verbose=verbose,
                                               alinefile=alinefile,mlinefile=mlinefile,logger=logger)            
             elemcat['par'][k] = out4['pars'][0]
             #elemcat['parerr'][k] = out4['parerr'][0]
@@ -1875,12 +1931,13 @@ def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=Fal
         if params5.get('ALPHA_H') is not None:
             del params5['ALPHA_H']
         fitparams5 = ['TEFF','LOGG','FE_H','RV']
+        if fitfeh is False: fitparams5 = ['TEFF','LOGG','RV']
         if 'VROT' in fitparams3 or fitvsini is True:
             fitparams5.append('VROT')
         if 'VMICRO' in fitparams3 or fitvmicro is True:
             fitparams5.append('VMICRO')
         fitparams5 = fitparams5+list(np.char.array(elem)+'_H')
-        out5, model5, synspec5 = fit_lsq(spec,params5,fitparams5,fparamlims,verbose=verbose,
+        out5, model5, synspec5 = fit_lsq(spec,params5,fitparams5,fparamlims,synthtype=synthtype,verbose=verbose,
                                          alinefile=alinefile,mlinefile=mlinefile,logger=logger)            
     else:
         out5 = out3
@@ -1913,7 +1970,8 @@ def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=Fal
     model.lsf = spec.lsf.copy()
 
     # Combine all of the synthetic spectra into one table
-    synspec = np.vstack((synspec3,synspec4,synspec5))
+    #synspec = np.vstack((synspec3,synspec4,synspec5))
+    synspec = synspec3+synspec4+synspec5
     
     # Make figure
     if figfile is not None:
@@ -1923,4 +1981,4 @@ def fit(spectrum,params=None,elem=None,figfile=None,fitvsini=False,fitvmicro=Fal
         logger.info('dt = %.2f sec.' % (time.time()-t0))
 
         
-    return out, model, synspec
+    return out, spec, model, synspec
