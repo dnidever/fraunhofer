@@ -1401,7 +1401,8 @@ def fit_elem(spec,params,elem,verbose=0,alinefile=None,mlinefile=None,logger=Non
             logger.info('nfev = %i' % spfitter.nsynfev)
             logger.info('dt = %.2f sec.' % (time.time()-t0))
             logger.info(' ')
-        return out, model
+        synspec = spfitter._models                    
+        return out, model, synspec
     
     # Now refine twice
     for i in range(2):
@@ -1459,7 +1460,7 @@ def fit_elem(spec,params,elem,verbose=0,alinefile=None,mlinefile=None,logger=Non
     #    synspec['pars'][i] = spfitter._all_pars[i]        
     #    synspec['flux'][i] = spfitter._all_model[i]
     #    synspec['chisq'][i] = spfitter._all_chisq[i]
-    synspec = spfitter._models        
+    synspec = spfitter._models
     
     if verbose>0:
         logger.info('%f %f' % (bestabund,bestchisq))
