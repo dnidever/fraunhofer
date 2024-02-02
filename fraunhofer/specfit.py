@@ -702,6 +702,9 @@ def synthe_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     logg = inputs['LOGG']
     metal = inputs['FE_H']
     vmicro = inputs.get('VMICRO')
+
+    #print(teff,logg,metal,vmicro)
+
     model = atlas_worker.get_model(Parameters(teff=teff, logg=logg, metallicity=metal, microturbulence=vmicro))
 
     # Establish parameters for creating SYNTHE spectrum
@@ -727,10 +730,11 @@ def synthe_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     if os.path.exists(modelfile) is False or os.stat(modelfile).st_size==0:
         print('model atmosphere file does NOT exist')
         import pdb; pdb.set_trace()
-
+        
     # Get the abundances
     abu = getabund(inputs,synthtype='synthe',verbose=verbose)
-
+    #print(abu)
+    
     ''' Abundances need to be in a dictionary format like the below example, in dex relative to Solar '''
     ''' abu = {"Mg":0.30, "Al":0.35, "Si":0.35, "S":0.35, "Fe":0.10, "Ni":0.25, "Ce":1.50} '''
 
@@ -1444,7 +1448,7 @@ def fit_elem(spec,params,elem,synthtype='synple',verbose=0,alinefile=None,mlinef
             logger.info('nfev = %i' % spfitter.nsynfev)
             logger.info('dt = %.2f sec.' % (time.time()-t0))
             logger.info(' ')
-        synspec = spfitter._models                    
+        synspec = spfitter._models
         return out, model, synspec
     
     # Now refine twice
@@ -1503,7 +1507,7 @@ def fit_elem(spec,params,elem,synthtype='synple',verbose=0,alinefile=None,mlinef
     #    synspec['pars'][i] = spfitter._all_pars[i]        
     #    synspec['flux'][i] = spfitter._all_model[i]
     #    synspec['chisq'][i] = spfitter._all_chisq[i]
-    synspec = spfitter._models
+    synspec = spfitter._models        
     
     if verbose>0:
         logger.info('%f %f' % (bestabund,bestchisq))
@@ -1648,8 +1652,9 @@ def fit_lsq(spec,params,fitparams=None,fparamlims=None,synthtype='synple',verbos
     return out, model, synspec
 
 
-def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppler=False,fitvsini=False,fitvmicro=False,
-        fitfeh=True,fitalphah=True,fparamlims=None,verbose=1,alinefile=None,mlinefile=None,logger=None):
+def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppler=False,
+        fitvsini=False,fitvmicro=False,fitfeh=True,fitalphah=True,fparamlims=None,
+        verbose=1,alinefile=None,mlinefile=None,notweak=True,logger=None):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
     abundances using a multi-step iterative method.
@@ -1699,6 +1704,8 @@ def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppl
          Logging object.
     skipdoppler : bool, optional
          Option to skip Doppler steps 1 and 2 and go directly to step 3
+    notweak : bool, optional
+         Do not remove outliers based on the best-fit Doppler model.  Default is True.
 
     Returns
     -------
@@ -1775,7 +1782,8 @@ def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppl
         # Use Doppler to get initial guess of stellar parameters and RV
         dopout, dopfmodel, dopspecm = doppler.fit(spec)
         origspec = spec.copy()
-        spec = dopspecm
+        if notweak==False:
+            spec = dopspecm
         # Use masked spectrum from Doppler from now on
         if verbose>0:
             logger.info('Teff = %.2f +/- %.2f' % (dopout['teff'][0],dopout['tefferr'][0]))
