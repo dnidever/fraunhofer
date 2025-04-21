@@ -99,7 +99,7 @@ def synmodel(spec,params,alinefile=None,mlinefile=None,verbose=False,normalize=T
 
 class SpecFitter:
     def __init__ (self,spec,params,fitparams=None,norm=True,verbose=False,
-                  synthtype='synple',alinefile=None,mlinefile=None):
+                  synthtype='synple',alinefile=None,mlinefile=None,savemodels=True):
         # Parameters
         self.params = params
         if fitparams is not None:
@@ -162,6 +162,7 @@ class SpecFitter:
         self._w0air = np.min(wave)
         self._w1air = np.max(wave)
         # parameters to save
+        self._savemodels = savemodels
         self._models = []
         #self._all_args = []
         #self._all_pars = []        
@@ -222,8 +223,9 @@ class SpecFitter:
         modeldict = {}
         modeldict['args'] = list(args)
         modeldict['pars'] = inputs.copy()
-        modeldict['flux'] = pspec.flux.flatten().copy()
         modeldict['chisq'] = self.chisq(pspec.flux.flatten())
+        if self._savemodels:        
+            modeldict['flux'] = pspec.flux.flatten().copy()        
         self._models.append(modeldict)
         #import pdb; pdb.set_trace()
         #self._all_args.append(list(args).copy())
@@ -338,8 +340,9 @@ class SpecFitter:
         modeldict = {}
         modeldict['args'] = list(args).copy()
         modeldict['pars'] = inputs.copy()
-        modeldict['flux'] = f0.copy()
         modeldict['chisq'] = self.chisq(f0)
+        if self._savemodels:
+            modeldict['flux'] = f0.copy()        
         self._models.append(modeldict)
         #self._all_args.append(list(args).copy())
         #self._all_pars.append(inputs.copy())        
@@ -399,8 +402,9 @@ class SpecFitter:
             modeldict = {}
             modeldict['args'] = list(pars).copy()
             modeldict['pars'] = list(tinputs).copy()
-            modeldict['flux'] = f1.copy()
             modeldict['chisq'] = self.chisq(f1)
+            if self._savemodels:
+                modeldict['flux'] = f1.copy()            
             self._models.append(modeldict)
             #self._all_pars.append(list(pars).copy())
             #self._all_model.append(f1.copy())
@@ -1876,6 +1880,8 @@ def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppl
     out3, model3, synspec3 = fit_lsq(spec,params3,fitparams3,fparamlims,synthtype=synthtype,verbose=verbose,
                                      alinefile=alinefile,mlinefile=mlinefile,logger=logger)    
     # typically 9 min.
+
+    
     
     # Should we fit C_H and N_H as well??
 
