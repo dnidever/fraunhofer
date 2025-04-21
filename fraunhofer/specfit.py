@@ -1865,12 +1865,13 @@ def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppl
         logger.info('Step 3: Fitting stellar parameters, RV and broadening')
     params3 = params.copy()
     fitparams3 = ['TEFF','LOGG','FE_H','ALPHA_H','RV']    
-    if fitfeh is False: fitparams3 = ['TEFF','LOGG','ALPHA_H','RV']    
-    if fitalphah is False: fitparams3 = ['TEFF','LOGG','RV']    
-    if params3['VROT']>0 or fitvsini is True:
+    if fitfeh == False: fitparams3 = ['TEFF','LOGG','ALPHA_H','RV']    
+    if fitalphah == False: fitparams3 = ['TEFF','LOGG','RV']    
+    #if params3['VROT']>0 or fitvsini is True:
+    if fitvsini:
         fitparams3.append('VROT')
     # Fit Vmicro as well if it's a dwarf
-    if params3['LOGG']>3.8 or params3['TEFF']>8000 or fitvmicro is True:
+    if params3['LOGG']>3.8 or params3['TEFF']>8000 or fitvmicro == True:
         fitparams3.append('VMICRO')
     out3, model3, synspec3 = fit_lsq(spec,params3,fitparams3,fparamlims,synthtype=synthtype,verbose=verbose,
                                      alinefile=alinefile,mlinefile=mlinefile,logger=logger)    
@@ -1940,10 +1941,10 @@ def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppl
         if params5.get('ALPHA_H') is not None:
             del params5['ALPHA_H']
         fitparams5 = ['TEFF','LOGG','FE_H','RV']
-        if fitfeh is False: fitparams5 = ['TEFF','LOGG','RV']
-        if 'VROT' in fitparams3 or fitvsini is True:
+        if fitfeh == False: fitparams5 = ['TEFF','LOGG','RV']
+        if fitvsini:
             fitparams5.append('VROT')
-        if 'VMICRO' in fitparams3 or fitvmicro is True:
+        if 'VMICRO' in fitparams3 or fitvmicro == True:
             fitparams5.append('VMICRO')
         fitparams5 = fitparams5+list(np.char.array(elem)+'_H')
         out5, model5, synspec5 = fit_lsq(spec,params5,fitparams5,fparamlims,synthtype=synthtype,verbose=verbose,
