@@ -667,12 +667,19 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     osamp = 3
     osamp_dw = dw/osamp
     fwhm = 2*osamp_dw    # minimum requirement to have flux conservation in synspec
-    wave1,flux1,cont1 = synple.syn(modelfile,(w0,w1),osamp_dw,vmicro=vmicro,vrot=vrot,fwhm=fwhm,
+    osamp_w0 = w0-osamp*dw
+    osamp_w1 = w1+osamp*dw
+    wave1,flux1,cont1 = synple.syn(modelfile,(osamp_w0,osamp_w1),osamp_dw,vmicro=vmicro,vrot=vrot,fwhm=fwhm,
                                    abu=list(abu),verbose=verbose,linelist=linelist)
     newshape = (wave1.shape[0]//osamp, osamp)
-    wave = wave1.reshape(newshape).mean(-1)
-    flux = flux1.reshape(newshape).mean(-1)
-    cont = cont1.reshape(newshape).mean(-1)
+    wave = wave1[:osamp*newshape[0]].reshape(newshape).mean(-1)
+    flux = flux1[:osamp*newshape[0]].reshape(newshape).mean(-1)
+    cont = cont1[:osamp*newshape[0]].reshape(newshape).mean(-1)
+    gd, = np.where((wave >= w0) & (wave <= w1))
+    if len(gd) < len(wave):
+        wave = wave[gd]
+        flux = flux[gd]
+        cont = cont[gd]
     
     # Delete temporary files
     shutil.rmtree(tdir)
