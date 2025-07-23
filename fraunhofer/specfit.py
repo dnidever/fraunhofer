@@ -658,10 +658,22 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     abu = getabund(inputs,verbose=verbose)
 
     #import pdb; pdb.set_trace()
-    
-    wave,flux,cont = synple.syn(modelfile,(w0,w1),dw,vmicro=vmicro,vrot=vrot,
-                                abu=list(abu),verbose=verbose,linelist=linelist)
 
+    # OVERSAMPLE FOR FLUX CONSERVATION
+    # For synspec we have to add some smoothing otherwise we won't have flux conservaton
+    # and it will only sample the underlying high-resolution spectrum
+    # Therefore, oversample, use the minimum smoothing for flux conservation, and rebin at the end
+    # to the desired sampling.
+    osamp = 3
+    osamp_dw = dw/osamp
+    fwhm = 2*osamp_dw    # minimum requirement to have flux conservation in synspec
+    wave1,flux1,cont1 = synple.syn(modelfile,(w0,w1),osamp_dw,vmicro=vmicro,vrot=vrot,fwhm=fwhm,
+                                   abu=list(abu),verbose=verbose,linelist=linelist)
+    newshape = (wave1.shape[0]//osamp, osamp)
+    wave = wave1.reshape(newshape).mean(-1)
+    flux = flux1.reshape(newshape).mean(-1)
+    cont = cont1.reshape(newshape).mean(-1)
+    
     # Delete temporary files
     shutil.rmtree(tdir)
     os.chdir(curdir)
