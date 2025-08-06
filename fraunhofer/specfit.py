@@ -62,6 +62,8 @@ def synmodel(spec,params,alinefile=None,mlinefile=None,verbose=False,normalize=T
          The atomic linelist to use.  Default is None which means the default synple linelist is used.
     mlinefile : str, optional
          The molecular linelist to use.  Default is None which means the default synple linelist is used.
+    nlte : boolean, optional
+         Turn on non-LTE (only for synple).  Default is False.
 
     Returns
     -------
@@ -872,6 +874,8 @@ def model_spectrum(inputs,verbose=False,synthtype='synple',keepextend=False,alin
        Molecular linelist filename.  Default is None (use synple's default one).
     verbose : bool, optional
        Verbose output.  Default is False.
+    nlte : boolean, optional
+         Turn on non-LTE (only for synple).  Default is False.
 
     Returns
     -------
@@ -1357,7 +1361,8 @@ def dopvrot_lsq(spec,models=None,initpar=None,verbose=False,logger=None):
     return out, lsmodel
 
 
-def fit_elem(spec,params,elem,synthtype='synple',verbose=0,alinefile=None,mlinefile=None,logger=None):
+def fit_elem(spec,params,elem,synthtype='synple',verbose=0,alinefile=None,mlinefile=None,
+             logger=None,nlte=False):
     """
     Fit an individual element.
 
@@ -1379,6 +1384,8 @@ def fit_elem(spec,params,elem,synthtype='synple',verbose=0,alinefile=None,mlinef
          The molecular linelist to use.  Default is None which means the default synple linelist is used.
     logger : logging object, optional
          Logging object.
+    nlte : boolean, optional
+         Turn on non-LTE (only for synple).  Default is False.
 
     Returns
     -------
@@ -1415,7 +1422,7 @@ def fit_elem(spec,params,elem,synthtype='synple',verbose=0,alinefile=None,mlinef
     
     # Initialize the fitter
     spfitter = SpecFitter(spec,params,fitparams=fitparams,synthtype=synthtype,verbose=(verbose>=2),
-                          alinefile=alinefile,mlinefile=mlinefile)
+                          alinefile=alinefile,mlinefile=mlinefile,nlte=nlte)
     spfitter.logger = logger
     spfitter.norm = True  # normalize the synthetic spectrum
     #spfitter.verbose = True
@@ -1542,7 +1549,8 @@ def fit_elem(spec,params,elem,synthtype='synple',verbose=0,alinefile=None,mlinef
     return out, model, synspec
     
 
-def fit_lsq(spec,params,fitparams=None,fparamlims=None,synthtype='synple',verbose=0,alinefile=None,mlinefile=None,logger=None):
+def fit_lsq(spec,params,fitparams=None,fparamlims=None,synthtype='synple',verbose=0,
+            alinefile=None,mlinefile=None,logger=None,nlte=False):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
     abundances using least-squares.
@@ -1568,6 +1576,8 @@ def fit_lsq(spec,params,fitparams=None,fparamlims=None,synthtype='synple',verbos
          The molecular linelist to use.  Default is None which means the default synple linelist is used.
     logger : logging object, optional
          Logging object.
+    nlte : boolean, optional
+         Turn on non-LTE (only for synple).  Default is False.
 
     Returns
     -------
@@ -1617,7 +1627,7 @@ def fit_lsq(spec,params,fitparams=None,fparamlims=None,synthtype='synple',verbos
     
     # Initialize the fitter
     spfitter = SpecFitter(spec,params,fitparams=fitparams,synthtype=synthtype,verbose=(verbose>=2),
-                          alinefile=alinefile,mlinefile=mlinefile)
+                          alinefile=alinefile,mlinefile=mlinefile,nlte=nlte)
     spfitter.logger = logger
     spfitter.norm = True  # normalize the synthetic spectrum
     bounds = mkbounds(fitparams,fparamlims)
@@ -1678,7 +1688,7 @@ def fit_lsq(spec,params,fitparams=None,fparamlims=None,synthtype='synple',verbos
 
 def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppler=False,
         fitvsini=False,fitvmicro=False,fitfeh=True,fitalphah=True,fparamlims=None,
-        verbose=1,alinefile=None,mlinefile=None,notweak=True,logger=None):
+        verbose=1,alinefile=None,mlinefile=None,notweak=True,logger=None,nlte=False):
     """
     Fit a spectrum with a synspec synthetic spectrum and determine stellar parameters and
     abundances using a multi-step iterative method.
@@ -1730,6 +1740,8 @@ def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppl
          Option to skip Doppler steps 1 and 2 and go directly to step 3
     notweak : bool, optional
          Do not remove outliers based on the best-fit Doppler model.  Default is True.
+    nlte : boolean, optional
+         Turn on non-LTE (only for synple).  Default is False.
 
     Returns
     -------
@@ -1898,7 +1910,7 @@ def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppl
     if params3['LOGG']>3.8 or params3['TEFF']>8000 or fitvmicro == True:
         fitparams3.append('VMICRO')
     out3, model3, synspec3 = fit_lsq(spec,params3,fitparams3,fparamlims,synthtype=synthtype,verbose=verbose,
-                                     alinefile=alinefile,mlinefile=mlinefile,logger=logger)    
+                                     alinefile=alinefile,mlinefile=mlinefile,logger=logger,nlte=nlte)
     # typically 9 min.
 
     
@@ -1942,7 +1954,7 @@ def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppl
             #out4, model4 = fit_lsq(spec,parselem,fitparselem,verbose=verbose,logger=logger)
             #import pdb; pdb.set_trace()
             out4, model4, synspec4 = fit_elem(spec,parselem,fitparselem,synthtype=synthtype,verbose=verbose,
-                                              alinefile=alinefile,mlinefile=mlinefile,logger=logger)            
+                                              alinefile=alinefile,mlinefile=mlinefile,logger=logger,nlte=nlte)
             elemcat['par'][k] = out4['pars'][0]
             #elemcat['parerr'][k] = out4['parerr'][0]
         if verbose>0:
@@ -1974,7 +1986,7 @@ def fit(spectrum,synthtype='synple',params=None,elem=None,figfile=None,skipdoppl
             fitparams5.append('VMICRO')
         fitparams5 = fitparams5+list(np.char.array(elem)+'_H')
         out5, model5, synspec5 = fit_lsq(spec,params5,fitparams5,fparamlims,synthtype=synthtype,verbose=verbose,
-                                         alinefile=alinefile,mlinefile=mlinefile,logger=logger)            
+                                         alinefile=alinefile,mlinefile=mlinefile,logger=logger,nlte=nlte)
     else:
         out5 = out3
         model5 = model3
