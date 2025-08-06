@@ -41,7 +41,7 @@ warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 cspeed = 2.99792458e5  # speed of light in km/s
 
-def synmodel(spec,params,alinefile=None,mlinefile=None,verbose=False,normalize=True):
+def synmodel(spec,params,alinefile=None,mlinefile=None,verbose=False,normalize=True,nlte=False):
     """
     Synthetic spectrum model.
 
@@ -89,7 +89,7 @@ def synmodel(spec,params,alinefile=None,mlinefile=None,verbose=False,normalize=T
     # Initialize the fitter
     fitparams = ['TEFF']  # "dummy" fitting variable
     spfitter = SpecFitter(spec,params,fitparams=fitparams,verbose=(verbose>=2),
-                          alinefile=alinefile,mlinefile=mlinefile)
+                          alinefile=alinefile,mlinefile=mlinefile,nlte=nlte)
     spfitter.norm = normalize  # normalize the synthetic spectrum
     model = spfitter.model(spec.wave.flatten(),params['TEFF'],retobj=True)
     model.instrument = 'Model'
@@ -99,7 +99,7 @@ def synmodel(spec,params,alinefile=None,mlinefile=None,verbose=False,normalize=T
 
 class SpecFitter:
     def __init__ (self,spec,params,fitparams=None,norm=True,verbose=False,
-                  synthtype='synple',alinefile=None,mlinefile=None,savemodels=True):
+                  synthtype='synple',alinefile=None,mlinefile=None,savemodels=True,nlte=False):
         # Parameters
         self.params = params
         if fitparams is not None:
@@ -121,6 +121,7 @@ class SpecFitter:
         self.continuum_func = spec.continuum_func
         self.alinefile = alinefile
         self.mlinefile = mlinefile
+        self.nlte = nlte
         # Type of synthesis (synple or korg)
         self.synthtype = str(synthtype).lower()
         if self.synthtype not in ['synple','korg','synthe']:
@@ -214,7 +215,7 @@ class SpecFitter:
             print(inputs)
         # Create the synthetic spectrum
         synspec = model_spectrum(inputs,verbose=self.verbose,synthtype=self.synthtype,   # always returns air wavelengths
-                                 alinefile=self.alinefile,mlinefile=self.mlinefile)
+                                 alinefile=self.alinefile,mlinefile=self.mlinefile,nlte=self.nlte)
         self.nsynfev += 1
         # Convolve with the LSF and do air/vacuum wave conversion
         pspec = prepare_synthspec(synspec,self.lsf,norm=self.norm,
@@ -320,7 +321,7 @@ class SpecFitter:
         tinputs['VROT'] = 0
         tinputs['RV'] = 0
         origspec = model_spectrum(tinputs,keepextend=True,synthtype=self.synthtype,  # always are wavelengths
-                                  alinefile=self.alinefile,mlinefile=self.mlinefile)
+                                  alinefile=self.alinefile,mlinefile=self.mlinefile,nlte=self.nlte)
         self.nsynfev += 1
 
         # Smooth and shift
@@ -603,7 +604,7 @@ def korg_wrapper(inputs,verbose=False,alinefile=None,mlinefile=None):
     return (wave,flux,cont)
 
 
-def synple_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=None):
+def synple_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=None,nlte=False):
     """ This is a wrapper around synple to generate a new synthetic spectrum."""
     # Wavelengths are all AIR!!
     
@@ -670,7 +671,7 @@ def synple_wrapper(inputs,verbose=False,tmpbase='/tmp',alinefile=None,mlinefile=
     osamp_w0 = w0-osamp*dw
     osamp_w1 = w1+osamp*dw
     wave1,flux1,cont1 = synple.syn(modelfile,(osamp_w0,osamp_w1),osamp_dw,vmicro=vmicro,vrot=vrot,fwhm=fwhm,
-                                   abu=list(abu),verbose=verbose,linelist=linelist)
+                                   abu=list(abu),verbose=verbose,linelist=linelist,nlte=nlte)
     newshape = (wave1.shape[0]//osamp, osamp)
     wave = wave1[:osamp*newshape[0]].reshape(newshape).mean(-1)
     flux = flux1[:osamp*newshape[0]].reshape(newshape).mean(-1)
@@ -848,7 +849,7 @@ def smoothshift_spectrum(inpspec,vmicro=None,vrot=None,rv=None):
     return spec
 
 
-def model_spectrum(inputs,verbose=False,synthtype='synple',keepextend=False,alinefile=None,mlinefile=None):
+def model_spectrum(inputs,verbose=False,synthtype='synple',keepextend=False,alinefile=None,mlinefile=None,nlte=False):
     """
     This creates a model spectrum given the inputs:
     RV, Teff, logg, vmicro, vsini, [Fe/H], [X/Fe], w0, w1, dw.
@@ -903,7 +904,7 @@ def model_spectrum(inputs,verbose=False,synthtype='synple',keepextend=False,alin
     inputsext['VROT'] = 0
     if synthtype == 'synple':
         wave1,flux1,cont1 = synple_wrapper(inputsext,verbose=verbose,alinefile=alinefile,
-                                           mlinefile=mlinefile)
+                                           mlinefile=mlinefile,nlte=nlte)
     if synthtype == 'korg':
         wave1,flux1,cont1 = korg_wrapper(inputsext,verbose=verbose,alinefile=alinefile,
                                          mlinefile=mlinefile)
